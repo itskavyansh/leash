@@ -69,12 +69,12 @@ let currentDbPath: string | null = null;
 export function getDb(customPath?: string): Database.Database {
   const dbPath = customPath ?? process.env.LEASH_DB_PATH ?? path.resolve(process.cwd(), "data", "leash.db");
 
-  if (dbInstance && currentDbPath === dbPath && dbPath !== ":memory:") {
+  if (dbInstance && currentDbPath === dbPath) {
     return dbInstance;
   }
 
-  // If switching db path or in-memory, close existing
-  if (dbInstance && dbPath !== ":memory:") {
+  // If switching db path, close existing
+  if (dbInstance) {
     try {
       dbInstance.close();
     } catch {
@@ -90,15 +90,27 @@ export function getDb(customPath?: string): Database.Database {
   }
 
   const db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
+  if (dbPath !== ":memory:") {
+    db.pragma("journal_mode = WAL");
+  }
   initSchema(db);
 
-  if (dbPath !== ":memory:") {
-    dbInstance = db;
-    currentDbPath = dbPath;
-  }
+  dbInstance = db;
+  currentDbPath = dbPath;
 
   return db;
+}
+
+export function resetDb(): void {
+  if (dbInstance) {
+    try {
+      dbInstance.close();
+    } catch {
+      // ignore
+    }
+    dbInstance = null;
+    currentDbPath = null;
+  }
 }
 
 function initSchema(db: Database.Database): void {

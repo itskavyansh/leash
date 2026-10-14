@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import Database from "better-sqlite3";
 import {
   getDb,
+  resetDb,
   getRules,
   saveRules,
   insertAction,
@@ -16,6 +17,7 @@ describe("Database layer (in-memory SQLite)", () => {
   let db: Database.Database;
 
   beforeEach(() => {
+    resetDb();
     db = getDb(":memory:");
   });
 
