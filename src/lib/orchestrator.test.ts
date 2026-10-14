@@ -5,14 +5,37 @@ import { handleRequest } from "./orchestrator";
 import { getDb, getAction, resetDb } from "./db";
 
 class MockProvider implements LlmProvider {
-  constructor(private mockResponse: LlmCompletionResult) {}
+  public callCount = 0;
+  private queue: Array<{ response?: LlmCompletionResult; error?: unknown }> = [];
+
+  constructor(initial?: LlmCompletionResult) {
+    if (initial) {
+      this.queue.push({ response: initial });
+    }
+  }
 
   setResponse(res: LlmCompletionResult) {
-    this.mockResponse = res;
+    this.queue = [{ response: res }];
+  }
+
+  enqueueResponse(res: LlmCompletionResult) {
+    this.queue.push({ response: res });
+  }
+
+  enqueueError(err: unknown) {
+    this.queue.push({ error: err });
   }
 
   async complete(): Promise<LlmCompletionResult> {
-    return this.mockResponse;
+    this.callCount++;
+    const next = this.queue.shift();
+    if (!next) {
+      throw new Error("MockProvider: No queued responses or errors");
+    }
+    if (next.error) {
+      throw next.error;
+    }
+    return next.response!;
   }
 }
 
@@ -305,6 +328,127 @@ describe("AI parse & Orchestrator", () => {
       const res = await handleRequest("Refund the customer", mock);
       expect(res.parse.kind).toBe("clarify");
       expect(res.action).toBeUndefined();
+    });
+  });
+
+  describe("Resilience and Retry handling", () => {
+    const instantDelay = async () => {};
+
+    it("retries on a 503 error on the first call then succeeds on second call", async () => {
+      const mock = new MockProvider();
+      mock.enqueueError(
+        new Error(
+          '{"error":{"code":503,"message":"This model is currently experiencing high demand.","status":"UNAVAILABLE"}}'
+        )
+      );
+      mock.enqueueResponse({
+        toolName: "propose_action",
+        toolInput: {
+          type: "send_payout",
+          amount: 50,
+          recipient: "sb-sub@example.com",
+          description: "Retried payout",
+        },
+      });
+
+      const res = await parseRequest(
+        "Pay Sam (sb-sub@example.com) $50",
+        mock,
+        instantDelay
+      );
+
+      expect(mock.callCount).toBe(2);
+      expect(res.kind).toBe("action");
+      if (res.kind === "action") {
+        expect(res.action.amount).toBe(50);
+        expect(res.action.recipient).toBe("sb-sub@example.com");
+      }
+    });
+
+    it("returns kind 'error' with retryable: true when 503 occurs on all 3 attempts", async () => {
+      const mock = new MockProvider();
+      const err503 = new Error(
+        '{"error":{"code":503,"message":"This model is currently experiencing high demand.","status":"UNAVAILABLE"}}'
+      );
+      mock.enqueueError(err503);
+      mock.enqueueError(err503);
+      mock.enqueueError(err503);
+
+      const res = await parseRequest(
+        "Pay Sam (sb-sub@example.com) $50",
+        mock,
+        instantDelay
+      );
+
+      expect(mock.callCount).toBe(3);
+      expect(res.kind).toBe("error");
+      if (res.kind === "error") {
+        expect(res.retryable).toBe(true);
+        expect(res.message).toBe(
+          "The AI service is busy right now. Please try again in a moment."
+        );
+        // Ensure message never contains raw JSON
+        expect(res.message).not.toContain("{");
+        expect(res.message).not.toContain("UNAVAILABLE");
+      }
+    });
+
+    it("does not store anything in orchestrator when parse result is an error", async () => {
+      const mock = new MockProvider();
+      const err503 = new Error("HTTP 503 Service Unavailable");
+      mock.enqueueError(err503);
+      mock.enqueueError(err503);
+      mock.enqueueError(err503);
+
+      const res = await handleRequest(
+        "Pay Sam (sb-sub@example.com) $50",
+        mock,
+        instantDelay
+      );
+
+      expect(res.parse.kind).toBe("error");
+      expect(res.action).toBeUndefined();
+    });
+
+    it("returns kind 'error' with retryable: false without retrying on 401 error", async () => {
+      const mock = new MockProvider();
+      const err401 = new Error(
+        '{"error":{"code":401,"message":"Invalid API key provided.","status":"UNAUTHENTICATED"}}'
+      );
+      mock.enqueueError(err401);
+
+      const res = await parseRequest(
+        "Pay Sam (sb-sub@example.com) $50",
+        mock,
+        instantDelay
+      );
+
+      expect(mock.callCount).toBe(1); // exactly 1 attempt, no retries
+      expect(res.kind).toBe("error");
+      if (res.kind === "error") {
+        expect(res.retryable).toBe(false);
+        expect(res.message).toBe("The AI service is not configured correctly.");
+        expect(res.message).not.toContain("{");
+        expect(res.message).not.toContain("UNAUTHENTICATED");
+      }
+    });
+
+    it("returns kind 'clarify' on zod schema validation failures rather than error", async () => {
+      const mock = new MockProvider({
+        toolName: "propose_action",
+        toolInput: {
+          type: "send_payout",
+          amount: "invalid-number",
+          recipient: "not-an-email",
+        },
+      });
+
+      const res = await parseRequest("Pay Sam $50", mock, instantDelay);
+      expect(mock.callCount).toBe(1);
+      expect(res.kind).toBe("clarify");
+      if (res.kind === "clarify") {
+        expect(res.question).toContain("incomplete or invalid");
+      }
     });
   });
 });

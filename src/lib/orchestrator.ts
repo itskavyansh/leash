@@ -1,6 +1,6 @@
 import { ActionRecord, getRules, getSpentToday, insertAction } from "./db";
 import { evaluate } from "./policy";
-import { parseRequest, ParseResult } from "./ai/parse";
+import { DelayFn, parseRequest, ParseResult } from "./ai/parse";
 import { LlmProvider } from "./ai/provider";
 import { ActionStatus } from "./types";
 
@@ -32,9 +32,10 @@ function mapDecisionToStatus(decision: "approve" | "needs_approval" | "blocked")
  */
 export async function handleRequest(
   text: string,
-  provider?: LlmProvider
+  provider?: LlmProvider,
+  delayFn?: DelayFn
 ): Promise<HandleRequestResult> {
-  const parse = await parseRequest(text, provider);
+  const parse = await parseRequest(text, provider, delayFn);
 
   if (parse.kind !== "action") {
     return { parse };

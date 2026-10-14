@@ -5,7 +5,8 @@ import { getProvider, LlmProvider, ToolDef } from "./provider";
 export type ParseResult =
   | { kind: "action"; action: ProposedAction }
   | { kind: "clarify"; question: string }
-  | { kind: "unsupported"; message: string };
+  | { kind: "unsupported"; message: string }
+  | { kind: "error"; message: string; retryable: boolean };
 
 const ProposeActionSchema = z.object({
   type: z.enum(["send_invoice", "send_payout", "issue_refund"]),
@@ -84,34 +85,128 @@ CRITICAL OPERATIONAL RULES:
 5. Currency is always USD.
 6. If the request is not related to sending an invoice, sending a payout, or issuing a refund (for example general conversation, weather questions, or unrelated requests), you must NOT call propose_action. Instead, call ask_clarification or decline with a question asking how you can help with PayPal invoices, payouts, or refunds.`;
 
-export async function parseRequest(
-  text: string,
-  provider?: LlmProvider
-): Promise<ParseResult> {
-  const llm = provider ?? (await getProvider());
+export function classifyProviderError(err: unknown): {
+  retryable: boolean;
+  message: string;
+} {
+  let status: number | null = null;
 
-  let result;
-  try {
-    result = await llm.complete({
-      system: SYSTEM_PROMPT,
-      user: text,
-      tools: TOOLS,
-    });
-  } catch (err) {
+  if (err && typeof err === "object") {
+    const errObj = err as Record<string, unknown>;
+
+    if (typeof errObj.status === "number") {
+      status = errObj.status;
+    } else if (typeof errObj.statusCode === "number") {
+      status = errObj.statusCode;
+    } else if (typeof errObj.code === "number") {
+      status = errObj.code;
+    } else if (errObj.error && typeof errObj.error === "object") {
+      const nested = errObj.error as Record<string, unknown>;
+      if (typeof nested.code === "number") {
+        status = nested.code;
+      } else if (typeof nested.status === "number") {
+        status = nested.status;
+      }
+    }
+  }
+
+  const rawMessage = err instanceof Error ? err.message : String(err ?? "");
+
+  if (status === null && rawMessage) {
+    const statusMatch =
+      rawMessage.match(/"code"\s*:\s*(\d{3})/) ||
+      rawMessage.match(/"status"\s*:\s*(\d{3})/) ||
+      rawMessage.match(/\b(429|500|502|503|504|400|401|403|404)\b/);
+
+    if (statusMatch) {
+      status = parseInt(statusMatch[1], 10);
+    }
+  }
+
+  const lowerMsg = rawMessage.toLowerCase();
+  const isNetworkOrTimeout =
+    lowerMsg.includes("timeout") ||
+    lowerMsg.includes("timed out") ||
+    lowerMsg.includes("econnreset") ||
+    lowerMsg.includes("econnrefused") ||
+    lowerMsg.includes("enotfound") ||
+    lowerMsg.includes("etimedout") ||
+    lowerMsg.includes("network") ||
+    lowerMsg.includes("fetch failed") ||
+    lowerMsg.includes("unavailable");
+
+  const retryableStatuses = new Set([429, 500, 502, 503, 504]);
+
+  if ((status !== null && retryableStatuses.has(status)) || (status === null && isNetworkOrTimeout)) {
     return {
-      kind: "clarify",
-      question:
-        err instanceof Error
-          ? `Could not process request: ${err.message}`
-          : "Could not process request. Please clarify your request.",
+      retryable: true,
+      message: "The AI service is busy right now. Please try again in a moment.",
     };
   }
 
-  if (!("toolName" in result)) {
+  if (status !== null && [400, 401, 403, 404].includes(status)) {
+    return {
+      retryable: false,
+      message: "The AI service is not configured correctly.",
+    };
+  }
+
+  return {
+    retryable: false,
+    message: "The AI service encountered an error.",
+  };
+}
+
+export type DelayFn = (ms: number) => Promise<void>;
+
+const defaultDelay: DelayFn = (ms: number) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+export async function parseRequest(
+  text: string,
+  provider?: LlmProvider,
+  delayFn: DelayFn = defaultDelay
+): Promise<ParseResult> {
+  const llm = provider ?? (await getProvider());
+
+  const delays = [1000, 3000];
+  let lastClassified: { retryable: boolean; message: string } | null = null;
+  let result;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      result = await llm.complete({
+        system: SYSTEM_PROMPT,
+        user: text,
+        tools: TOOLS,
+      });
+      lastClassified = null;
+      break;
+    } catch (err) {
+      console.error(`[AI Provider Error] Attempt ${attempt + 1}:`, err);
+      lastClassified = classifyProviderError(err);
+
+      if (!lastClassified.retryable || attempt >= 2) {
+        break;
+      }
+
+      await delayFn(delays[attempt]);
+    }
+  }
+
+  if (lastClassified) {
+    return {
+      kind: "error",
+      message: lastClassified.message,
+      retryable: lastClassified.retryable,
+    };
+  }
+
+  if (!result || !("toolName" in result)) {
     return {
       kind: "unsupported",
       message:
-        result.text ||
+        (result && "text" in result && result.text) ||
         "I can only help with sending invoices, sending payouts, and issuing refunds.",
     };
   }

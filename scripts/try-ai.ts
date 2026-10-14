@@ -56,6 +56,8 @@ async function main(): Promise<void> {
         console.log(`   Question   : ${result.parse.question}`);
       } else if (result.parse.kind === "unsupported") {
         console.log(`   Message    : ${result.parse.message}`);
+      } else if (result.parse.kind === "error") {
+        console.log(`   Message    : ${result.parse.message}`);
       }
     } catch (err) {
       console.error(
@@ -64,6 +66,11 @@ async function main(): Promise<void> {
     }
 
     console.log();
+
+    // 1.5s pause between inputs to avoid free-tier rate limits
+    if (i < TEST_INPUTS.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
   }
 
   console.log("=== Done ===");
