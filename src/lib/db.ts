@@ -126,6 +126,11 @@ function initSchema(db: Database.Database): void {
       errorMessage TEXT,
       requestText TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS processed_events (
+      eventId TEXT PRIMARY KEY,
+      receivedAt TEXT NOT NULL
+    );
   `);
 
   // Seed default rules if empty
@@ -239,6 +244,37 @@ export function updateAction(
 export function getAction(id: string, db: Database.Database = getDb()): ActionRecord | null {
   const row = db.prepare("SELECT * FROM actions WHERE id = ?").get(id) as ActionRecord | undefined;
   return row ?? null;
+}
+
+export function findActionByPaypalId(
+  paypalId: string,
+  db: Database.Database = getDb()
+): StoredAction | undefined {
+  const row = db
+    .prepare("SELECT * FROM actions WHERE paypalId = ?")
+    .get(paypalId) as StoredAction | undefined;
+  return row;
+}
+
+export function isEventProcessed(
+  eventId: string,
+  db: Database.Database = getDb()
+): boolean {
+  const row = db
+    .prepare("SELECT eventId FROM processed_events WHERE eventId = ?")
+    .get(eventId);
+  return Boolean(row);
+}
+
+export function recordProcessedEvent(
+  eventId: string,
+  db: Database.Database = getDb()
+): void {
+  db.prepare(`
+    INSERT INTO processed_events (eventId, receivedAt)
+    VALUES (?, ?)
+    ON CONFLICT(eventId) DO NOTHING
+  `).run(eventId, new Date().toISOString());
 }
 
 /**
