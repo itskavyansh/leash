@@ -16,9 +16,6 @@ import { config as loadEnv } from "dotenv";
 // Load .env.local before other modules are loaded
 loadEnv({ path: path.resolve(process.cwd(), ".env.local") });
 
-// Use an in-memory database for testing
-process.env.LEASH_DB_PATH = ":memory:";
-
 const TEST_INPUTS = [
   "Invoice Acme Corp (billing@acme.com) $850 for the logo design",
   "Pay Sam (sb-sub@example.com) $120 for the illustration",

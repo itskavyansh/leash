@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { executeAction, approveAction, rejectAction } from "./executor";
-import { getDb, getAction, insertAction, resetDb, saveRules, getRules } from "./db";
+import { getAction, insertAction, saveRules, getRules } from "./db";
 import { processRequest } from "./orchestrator";
 import { LlmCompletionResult, LlmProvider } from "./ai/provider";
+import { setupTestDb, teardownTestDb } from "./testDb";
 
 class MockProvider implements LlmProvider {
   constructor(private response: LlmCompletionResult) {}
@@ -12,15 +13,17 @@ class MockProvider implements LlmProvider {
 }
 
 describe("Executor, Approval Workflow, and processRequest", () => {
-  beforeEach(() => {
-    process.env.LEASH_DB_PATH = ":memory:";
-    resetDb();
-    getDb(":memory:");
+  beforeEach(async () => {
+    await setupTestDb();
+  });
+
+  afterEach(async () => {
+    await teardownTestDb();
   });
 
   describe("executeAction()", () => {
     it("executes an approved action and updates status to completed with paypalId and paypalStatus", async () => {
-      const action = insertAction({
+      const action = await insertAction({
         type: "send_payout",
         amount: 50,
         currency: "USD",
@@ -50,13 +53,13 @@ describe("Executor, Approval Workflow, and processRequest", () => {
       expect(result.errorMessage).toBeNull();
 
       // Verify DB row
-      const inDb = getAction(action.id);
+      const inDb = await getAction(action.id);
       expect(inDb?.status).toBe("completed");
       expect(inDb?.paypalId).toBe("PAYOUT-BATCH-999");
     });
 
     it("handles PayPal execution failure with safe error message without secrets", async () => {
-      const action = insertAction({
+      const action = await insertAction({
         type: "send_payout",
         amount: 50,
         currency: "USD",
@@ -86,13 +89,13 @@ describe("Executor, Approval Workflow, and processRequest", () => {
       expect(result.errorMessage).toContain("DBG_12345");
       expect(result.errorMessage).not.toContain("body=");
 
-      const inDb = getAction(action.id);
+      const inDb = await getAction(action.id);
       expect(inDb?.status).toBe("failed");
       expect(inDb?.errorMessage).toBe(result.errorMessage);
     });
 
     it("does nothing when action is not in approved status", async () => {
-      const action = insertAction({
+      const action = await insertAction({
         type: "send_payout",
         amount: 50,
         currency: "USD",
@@ -116,7 +119,7 @@ describe("Executor, Approval Workflow, and processRequest", () => {
     });
 
     it("prevents double execution: concurrent/second execute only calls PayPal once", async () => {
-      const action = insertAction({
+      const action = await insertAction({
         type: "send_invoice",
         amount: 850,
         currency: "USD",
@@ -158,7 +161,7 @@ describe("Executor, Approval Workflow, and processRequest", () => {
 
   describe("approveAction() and rejectAction()", () => {
     it("approveAction on a pending row executes it and updates to completed", async () => {
-      const action = insertAction({
+      const action = await insertAction({
         type: "send_payout",
         amount: 450,
         currency: "USD",
@@ -185,7 +188,7 @@ describe("Executor, Approval Workflow, and processRequest", () => {
     });
 
     it("approveAction re-blocks when recipient was removed from allowlist", async () => {
-      const action = insertAction({
+      const action = await insertAction({
         type: "send_payout",
         amount: 150,
         currency: "USD",
@@ -198,8 +201,8 @@ describe("Executor, Approval Workflow, and processRequest", () => {
       });
 
       // Update rules: remove sb-sub@example.com from allowedRecipients
-      const currentRules = getRules();
-      saveRules({
+      const currentRules = await getRules();
+      await saveRules({
         ...currentRules,
         allowedRecipients: ["other@example.com"],
       });
@@ -216,7 +219,7 @@ describe("Executor, Approval Workflow, and processRequest", () => {
     });
 
     it("approveAction re-blocks when amount exceeds modified hardLimit", async () => {
-      const action = insertAction({
+      const action = await insertAction({
         type: "send_payout",
         amount: 800,
         currency: "USD",
@@ -229,8 +232,8 @@ describe("Executor, Approval Workflow, and processRequest", () => {
       });
 
       // Lower hardLimit to 500
-      const currentRules = getRules();
-      saveRules({
+      const currentRules = await getRules();
+      await saveRules({
         ...currentRules,
         hardLimit: 500,
       });
@@ -247,7 +250,7 @@ describe("Executor, Approval Workflow, and processRequest", () => {
     });
 
     it("approveAction on a non-pending row is a no-op", async () => {
-      const action = insertAction({
+      const action = await insertAction({
         type: "send_payout",
         amount: 50,
         currency: "USD",
@@ -269,7 +272,7 @@ describe("Executor, Approval Workflow, and processRequest", () => {
     });
 
     it("rejectAction sets status to rejected, and rejected row cannot be approved", async () => {
-      const action = insertAction({
+      const action = await insertAction({
         type: "send_payout",
         amount: 300,
         currency: "USD",
@@ -281,10 +284,10 @@ describe("Executor, Approval Workflow, and processRequest", () => {
         ruleFired: "auto_limit",
       });
 
-      const rejected = rejectAction(action.id);
+      const rejected = await rejectAction(action.id);
       expect(rejected.status).toBe("rejected");
 
-      const inDb = getAction(action.id);
+      const inDb = await getAction(action.id);
       expect(inDb?.status).toBe("rejected");
 
       // Try to approve rejected row

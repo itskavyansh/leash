@@ -30,7 +30,7 @@ const rulesSchema = z
   });
 
 export async function GET(): Promise<NextResponse> {
-  const rules = getRules();
+  const rules = await getRules();
   return NextResponse.json(rules, { status: 200 });
 }
 
@@ -53,6 +53,6 @@ export async function PUT(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  const updatedRules = saveRules(parseResult.data);
+  const updatedRules = await saveRules(parseResult.data);
   return NextResponse.json(updatedRules, { status: 200 });
 }

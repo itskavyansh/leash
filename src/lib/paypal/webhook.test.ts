@@ -1,17 +1,17 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { applyWebhookEvent, verifyWebhook, WebhookEventPayload, WebhookFetchFn } from "./webhook";
-import { getDb, getAction, insertAction, resetDb } from "../db";
+import { getAction, insertAction } from "../db";
+import { setupTestDb, teardownTestDb } from "../testDb";
 
 describe("PayPal Webhook Verification & Status Reconciliation", () => {
-  beforeEach(() => {
-    process.env.LEASH_DB_PATH = ":memory:";
-    resetDb();
-    getDb(":memory:");
+  beforeEach(async () => {
+    await setupTestDb();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     delete process.env.WEBHOOK_SKIP_VERIFY;
     delete process.env.PAYPAL_WEBHOOK_ID;
+    await teardownTestDb();
   });
 
   describe("verifyWebhook()", () => {
@@ -124,18 +124,18 @@ describe("PayPal Webhook Verification & Status Reconciliation", () => {
   });
 
   describe("applyWebhookEvent()", () => {
-    it("does NOT record unhandled or unknown events into processed_events so retries can succeed", () => {
+    it("does NOT record unhandled or unknown events into processed_events so retries can succeed", async () => {
       const unhandledEvent: WebhookEventPayload = {
         id: "EV-UNHANDLED-1",
         event_type: "CUSTOM.UNKNOWN.EVENT",
         resource: { id: "123" },
       };
 
-      const res1 = applyWebhookEvent(unhandledEvent);
+      const res1 = await applyWebhookEvent(unhandledEvent);
       expect(res1.handled).toBe(false);
 
       // Verify that event is NOT recorded as duplicate when called again
-      const res2 = applyWebhookEvent(unhandledEvent);
+      const res2 = await applyWebhookEvent(unhandledEvent);
       expect(res2.handled).toBe(false);
       expect(res2.note).not.toBe("duplicate");
 
@@ -146,12 +146,12 @@ describe("PayPal Webhook Verification & Status Reconciliation", () => {
         resource: { payout_batch_id: "BATCH-LATER-INSERTED" },
       };
 
-      const res3 = applyWebhookEvent(unmatchedEvent);
+      const res3 = await applyWebhookEvent(unmatchedEvent);
       expect(res3.handled).toBe(false);
       expect(res3.note).toContain("no_action");
 
       // Insert action later and retry the same event id!
-      insertAction({
+      await insertAction({
         type: "send_payout",
         amount: 50,
         currency: "USD",
@@ -165,13 +165,13 @@ describe("PayPal Webhook Verification & Status Reconciliation", () => {
         paypalStatus: "PENDING",
       });
 
-      const res4 = applyWebhookEvent(unmatchedEvent);
+      const res4 = await applyWebhookEvent(unmatchedEvent);
       expect(res4.handled).toBe(true);
       expect(res4.note).not.toBe("duplicate");
     });
 
-    it("updates PAYMENT.PAYOUTS-ITEM.SUCCEEDED to SUCCESS", () => {
-      const action = insertAction({
+    it("updates PAYMENT.PAYOUTS-ITEM.SUCCEEDED to SUCCESS", async () => {
+      const action = await insertAction({
         type: "send_payout",
         amount: 50,
         currency: "USD",
@@ -194,16 +194,16 @@ describe("PayPal Webhook Verification & Status Reconciliation", () => {
         },
       };
 
-      const result = applyWebhookEvent(event);
+      const result = await applyWebhookEvent(event);
       expect(result.handled).toBe(true);
       expect(result.actionId).toBe(action.id);
 
-      const inDb = getAction(action.id);
+      const inDb = await getAction(action.id);
       expect(inDb?.paypalStatus).toBe("SUCCESS");
     });
 
-    it("updates PAYMENT.PAYOUTS-ITEM.FAILED to FAILED and adds errorMessage", () => {
-      const action = insertAction({
+    it("updates PAYMENT.PAYOUTS-ITEM.FAILED to FAILED and adds errorMessage", async () => {
+      const action = await insertAction({
         type: "send_payout",
         amount: 50,
         currency: "USD",
@@ -225,16 +225,16 @@ describe("PayPal Webhook Verification & Status Reconciliation", () => {
         },
       };
 
-      const result = applyWebhookEvent(event);
+      const result = await applyWebhookEvent(event);
       expect(result.handled).toBe(true);
 
-      const inDb = getAction(action.id);
+      const inDb = await getAction(action.id);
       expect(inDb?.paypalStatus).toBe("FAILED");
       expect(inDb?.errorMessage).toContain("Payout item failed");
     });
 
-    it("updates PAYMENT.PAYOUTSBATCH.SUCCESS to SUCCESS", () => {
-      const action = insertAction({
+    it("updates PAYMENT.PAYOUTSBATCH.SUCCESS to SUCCESS", async () => {
+      const action = await insertAction({
         type: "send_payout",
         amount: 50,
         currency: "USD",
@@ -258,15 +258,15 @@ describe("PayPal Webhook Verification & Status Reconciliation", () => {
         },
       };
 
-      const result = applyWebhookEvent(event);
+      const result = await applyWebhookEvent(event);
       expect(result.handled).toBe(true);
 
-      const inDb = getAction(action.id);
+      const inDb = await getAction(action.id);
       expect(inDb?.paypalStatus).toBe("SUCCESS");
     });
 
-    it("updates INVOICING.INVOICE.PAID to PAID (matching resource.invoice.id or resource.id)", () => {
-      const action1 = insertAction({
+    it("updates INVOICING.INVOICE.PAID to PAID (matching resource.invoice.id or resource.id)", async () => {
+      const action1 = await insertAction({
         type: "send_invoice",
         amount: 850,
         currency: "USD",
@@ -280,7 +280,7 @@ describe("PayPal Webhook Verification & Status Reconciliation", () => {
         paypalStatus: "SENT",
       });
 
-      const action2 = insertAction({
+      const action2 = await insertAction({
         type: "send_invoice",
         amount: 250,
         currency: "USD",
@@ -295,7 +295,7 @@ describe("PayPal Webhook Verification & Status Reconciliation", () => {
       });
 
       // event 1 uses resource.invoice.id
-      const res1 = applyWebhookEvent({
+      const res1 = await applyWebhookEvent({
         id: "EV-INV-1",
         event_type: "INVOICING.INVOICE.PAID",
         resource: {
@@ -303,10 +303,10 @@ describe("PayPal Webhook Verification & Status Reconciliation", () => {
         },
       });
       expect(res1.handled).toBe(true);
-      expect(getAction(action1.id)?.paypalStatus).toBe("PAID");
+      expect((await getAction(action1.id))?.paypalStatus).toBe("PAID");
 
       // event 2 uses fallback resource.id
-      const res2 = applyWebhookEvent({
+      const res2 = await applyWebhookEvent({
         id: "EV-INV-2",
         event_type: "INVOICING.INVOICE.CANCELLED",
         resource: {
@@ -314,11 +314,11 @@ describe("PayPal Webhook Verification & Status Reconciliation", () => {
         },
       });
       expect(res2.handled).toBe(true);
-      expect(getAction(action2.id)?.paypalStatus).toBe("CANCELLED");
+      expect((await getAction(action2.id))?.paypalStatus).toBe("CANCELLED");
     });
 
-    it("updates PAYMENT.CAPTURE.REFUNDED to COMPLETED", () => {
-      const action = insertAction({
+    it("updates PAYMENT.CAPTURE.REFUNDED to COMPLETED", async () => {
+      const action = await insertAction({
         type: "issue_refund",
         amount: 30,
         currency: "USD",
@@ -332,7 +332,7 @@ describe("PayPal Webhook Verification & Status Reconciliation", () => {
         paypalStatus: "PENDING",
       });
 
-      const res = applyWebhookEvent({
+      const res = await applyWebhookEvent({
         id: "EV-REF-1",
         event_type: "PAYMENT.CAPTURE.REFUNDED",
         resource: {
@@ -341,11 +341,11 @@ describe("PayPal Webhook Verification & Status Reconciliation", () => {
       });
 
       expect(res.handled).toBe(true);
-      expect(getAction(action.id)?.paypalStatus).toBe("COMPLETED");
+      expect((await getAction(action.id))?.paypalStatus).toBe("COMPLETED");
     });
 
-    it("returns handled: false for unknown event types", () => {
-      const res = applyWebhookEvent({
+    it("returns handled: false for unknown event types", async () => {
+      const res = await applyWebhookEvent({
         id: "EV-UNKNOWN",
         event_type: "CUSTOM.UNKNOWN.EVENT",
         resource: { id: "123" },
@@ -354,8 +354,8 @@ describe("PayPal Webhook Verification & Status Reconciliation", () => {
       expect(res.note).toContain("unhandled");
     });
 
-    it("returns handled: false when no action matches the paypalId", () => {
-      const res = applyWebhookEvent({
+    it("returns handled: false when no action matches the paypalId", async () => {
+      const res = await applyWebhookEvent({
         id: "EV-NO-MATCH",
         event_type: "PAYMENT.PAYOUTS-ITEM.SUCCEEDED",
         resource: { payout_batch_id: "BATCH-DOES-NOT-EXIST" },
@@ -364,8 +364,8 @@ describe("PayPal Webhook Verification & Status Reconciliation", () => {
       expect(res.note).toContain("no_action");
     });
 
-    it("ignores duplicate event IDs (idempotency)", () => {
-      const action = insertAction({
+    it("ignores duplicate event IDs (idempotency)", async () => {
+      const action = await insertAction({
         type: "send_payout",
         amount: 50,
         currency: "USD",
@@ -385,32 +385,32 @@ describe("PayPal Webhook Verification & Status Reconciliation", () => {
         resource: { payout_batch_id: "BATCH-300" },
       };
 
-      const first = applyWebhookEvent(event);
+      const first = await applyWebhookEvent(event);
       expect(first.handled).toBe(true);
-      expect(getAction(action.id)?.paypalStatus).toBe("SUCCESS");
+      expect((await getAction(action.id))?.paypalStatus).toBe("SUCCESS");
 
-      // Set DB status back to PENDING manually to test idempotency
-      const second = applyWebhookEvent(event);
+      // Second time should report duplicate
+      const second = await applyWebhookEvent(event);
       expect(second.handled).toBe(true);
       expect(second.note).toBe("duplicate");
     });
 
-    it("does not throw on malformed or empty resource shapes", () => {
-      expect(() =>
+    it("does not throw on malformed or empty resource shapes", async () => {
+      await expect(
         applyWebhookEvent({
           id: "EV-MALFORMED-1",
           event_type: "PAYMENT.PAYOUTS-ITEM.SUCCEEDED",
           resource: null as unknown as Record<string, unknown>,
         })
-      ).not.toThrow();
+      ).resolves.not.toThrow();
 
-      expect(() =>
+      await expect(
         applyWebhookEvent({
           id: "EV-MALFORMED-2",
           event_type: "PAYMENT.PAYOUTS-ITEM.SUCCEEDED",
           resource: {},
         })
-      ).not.toThrow();
+      ).resolves.not.toThrow();
     });
   });
 });

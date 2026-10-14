@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { parseRequest } from "./ai/parse";
 import { LlmCompletionResult, LlmProvider } from "./ai/provider";
 import { handleRequest } from "./orchestrator";
-import { getDb, getAction, resetDb } from "./db";
+import { setupTestDb, teardownTestDb } from "./testDb";
 
 class MockProvider implements LlmProvider {
   public callCount = 0;
@@ -40,11 +40,12 @@ class MockProvider implements LlmProvider {
 }
 
 describe("AI parse & Orchestrator", () => {
-  beforeEach(() => {
-    // Ensure in-memory database is initialized for orchestrator tests
-    process.env.LEASH_DB_PATH = ":memory:";
-    resetDb();
-    getDb(":memory:");
+  beforeEach(async () => {
+    await setupTestDb();
+  });
+
+  afterEach(async () => {
+    await teardownTestDb();
   });
 
   describe("parseRequest() unit tests with MockProvider", () => {
@@ -241,7 +242,8 @@ describe("AI parse & Orchestrator", () => {
         );
 
         // Verify stored in DB
-        const saved = getAction(res.action.id);
+        const { getAction } = await import("./db");
+        const saved = await getAction(res.action.id);
         expect(saved?.status).toBe("blocked");
         expect(saved?.ruleFired).toBe("recipient_not_allowed");
       }

@@ -77,7 +77,7 @@ export async function executeAction(
   id: string,
   deps?: ExecutorDeps
 ): Promise<StoredAction> {
-  const action = getAction(id);
+  const action = await getAction(id);
   if (!action) {
     throw new Error(`Action not found: ${id}`);
   }
@@ -87,17 +87,18 @@ export async function executeAction(
   }
 
   // Atomically claim the action for execution
-  const claimed = claimForExecution(id);
+  const claimed = await claimForExecution(id);
   if (!claimed) {
     // Already claimed or status changed concurrently
-    return getAction(id)!;
+    const current = await getAction(id);
+    return current!;
   }
 
   const runner =
     deps?.run?.[action.type] ?? DEFAULT_RUNNERS[action.type];
 
   if (!runner) {
-    const updated = updateAction(id, {
+    const updated = await updateAction(id, {
       status: "failed",
       errorMessage: `No runner registered for action type: ${action.type}`,
     });
@@ -106,7 +107,7 @@ export async function executeAction(
 
   try {
     const result = await runner(action, action.id);
-    const updated = updateAction(id, {
+    const updated = await updateAction(id, {
       status: "completed",
       paypalId: result.paypalId,
       paypalStatus: result.paypalStatus,
@@ -115,7 +116,7 @@ export async function executeAction(
     return updated!;
   } catch (err) {
     const safeError = extractSafeErrorMessage(err);
-    const updated = updateAction(id, {
+    const updated = await updateAction(id, {
       status: "failed",
       errorMessage: safeError,
     });
@@ -132,7 +133,7 @@ export async function approveAction(
   id: string,
   deps?: ExecutorDeps
 ): Promise<StoredAction> {
-  const action = getAction(id);
+  const action = await getAction(id);
   if (!action) {
     throw new Error(`Action not found: ${id}`);
   }
@@ -142,7 +143,7 @@ export async function approveAction(
     return action;
   }
 
-  const rules = getRules();
+  const rules = await getRules();
   const hardCheck = evaluateHardChecks(
     {
       type: action.type,
@@ -156,7 +157,7 @@ export async function approveAction(
   );
 
   if (hardCheck) {
-    const updated = updateAction(id, {
+    const updated = await updateAction(id, {
       status: "blocked",
       decision: "blocked",
       reason: hardCheck.reason,
@@ -166,7 +167,7 @@ export async function approveAction(
   }
 
   // Set status "approved"
-  updateAction(id, {
+  await updateAction(id, {
     status: "approved",
     decision: "approve",
   });
@@ -177,8 +178,8 @@ export async function approveAction(
 /**
  * Rejects an action. Only valid from "pending_approval". Sets status to "rejected".
  */
-export function rejectAction(id: string): StoredAction {
-  const action = getAction(id);
+export async function rejectAction(id: string): Promise<StoredAction> {
+  const action = await getAction(id);
   if (!action) {
     throw new Error(`Action not found: ${id}`);
   }
@@ -187,7 +188,7 @@ export function rejectAction(id: string): StoredAction {
     return action;
   }
 
-  const updated = updateAction(id, {
+  const updated = await updateAction(id, {
     status: "rejected",
   });
   return updated!;

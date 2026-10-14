@@ -19,7 +19,7 @@ export async function POST(
 
   const { id } = await ctx.params;
 
-  const existing = getAction(id);
+  const existing = await getAction(id);
   if (!existing) {
     return NextResponse.json({ error: "Action not found" }, { status: 404 });
   }
@@ -31,6 +31,6 @@ export async function POST(
     );
   }
 
-  const updated = rejectAction(id);
+  const updated = await rejectAction(id);
   return NextResponse.json(updated, { status: 200 });
 }

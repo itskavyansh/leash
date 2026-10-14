@@ -4,24 +4,17 @@ services:
   - type: web
     name: leash
     runtime: node
-    # Free tier does not support persistent disks. To preserve SQLite data across deploys/restarts:
-    # 1. Change `plan: free` to `plan: starter` (or higher).
-    # 2. Uncomment the `disk:` configuration below and mount at /var/data.
-    # 3. Add LEASH_DB_PATH=/var/data/leash.db to the envVars list below.
     plan: free
     buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
-    # Optional persistent disk for paid tiers (starter+):
-    # disk:
-    #   name: leash-sqlite-data
-    #   mountPath: /var/data
-    #   sizeGB: 1
     envVars:
       - key: NODE_VERSION
         value: 20.18.0
       - key: DEMO_MODE
         value: "true"
+      - key: DATABASE_URL
+        sync: false
       - key: LLM_PROVIDER
         sync: false
       - key: LLM_MODEL

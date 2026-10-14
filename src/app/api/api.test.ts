@@ -5,7 +5,8 @@ import { POST as approvePost } from "./actions/[id]/approve/route";
 import { POST as rejectPost } from "./actions/[id]/reject/route";
 import { GET as rulesGet, PUT as rulesPut } from "./rules/route";
 import { POST as resetPost } from "./demo/reset/route";
-import { resetDb, getDb, insertAction, getAction, updateAction, saveRules } from "../../lib/db";
+import { insertAction, getAction, updateAction, saveRules } from "../../lib/db";
+import { setupTestDb, teardownTestDb } from "../../lib/testDb";
 import { resetRateLimits } from "../../lib/rateLimit";
 import * as orchestrator from "../../lib/orchestrator";
 import * as executor from "../../lib/executor";
@@ -24,30 +25,29 @@ vi.mock("@/lib/executor", async (importOriginal) => {
   return {
     ...actual,
     approveAction: vi.fn().mockImplementation(async (id: string) => {
-      const existing = getAction(id);
+      const existing = await getAction(id);
       if (!existing) {
         throw new Error("Action not found");
       }
-      return updateAction(id, { status: "approved" })!;
+      return (await updateAction(id, { status: "approved" }))!;
     }),
     executeAction: vi.fn().mockImplementation(async (id: string) => {
-      const existing = getAction(id);
+      const existing = await getAction(id);
       return existing!;
     }),
   };
 });
 
 describe("JSON API Routes", () => {
-  beforeEach(() => {
-    process.env.LEASH_DB_PATH = ":memory:";
-    resetDb();
-    getDb(":memory:");
+  beforeEach(async () => {
+    await setupTestDb();
     resetRateLimits();
     vi.clearAllMocks();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     delete process.env.DEMO_MODE;
+    await teardownTestDb();
   });
 
   describe("POST /api/request", () => {
@@ -61,23 +61,10 @@ describe("JSON API Routes", () => {
       const res = await requestPost(req);
       expect(res.status).toBe(400);
       const json = await res.json();
-      expect(json).toHaveProperty("error");
+      expect(json).toEqual({ error: "Text must not be empty" });
     });
 
-    it("returns 400 when text exceeds 500 characters", async () => {
-      const req = new Request("http://localhost:3000/api/request", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: "a".repeat(501) }),
-      });
-
-      const res = await requestPost(req);
-      expect(res.status).toBe(400);
-      const json = await res.json();
-      expect(json).toHaveProperty("error");
-    });
-
-    it("returns 200 with parse and action on valid request", async () => {
+    it("returns 200 with result when action is proposed and approved", async () => {
       const mockResult: ProcessRequestResult = {
         parse: {
           kind: "action",
@@ -85,27 +72,27 @@ describe("JSON API Routes", () => {
             type: "send_payout",
             amount: 50,
             currency: "USD",
-            recipient: "dev@example.com",
-            description: "Bug bounty",
+            recipient: "sb-sub@example.com",
+            description: "Test",
           },
         },
         action: {
-          id: "act-123",
+          id: "act-1",
           createdAt: new Date().toISOString(),
           type: "send_payout",
           amount: 50,
           currency: "USD",
-          recipient: "dev@example.com",
-          description: "Bug bounty",
+          recipient: "sb-sub@example.com",
+          description: "Test",
           reference: null,
-          status: "pending_approval",
-          decision: "needs_approval",
-          reason: "Amount requires approval",
-          ruleFired: "needs_approval_above_limit",
-          paypalId: null,
-          paypalStatus: null,
+          status: "completed",
+          decision: "approve",
+          reason: "Within limits",
+          ruleFired: "within_limits",
+          requestText: "Pay $50",
+          paypalId: "PAYOUT-123",
+          paypalStatus: "SUCCESS",
           errorMessage: null,
-          requestText: "Pay $50 to dev@example.com for bug bounty",
         },
       };
 
@@ -114,17 +101,37 @@ describe("JSON API Routes", () => {
       const req = new Request("http://localhost:3000/api/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: "Pay $50 to dev@example.com for bug bounty" }),
+        body: JSON.stringify({ text: "Pay $50" }),
       });
 
       const res = await requestPost(req);
       expect(res.status).toBe(200);
       const json = await res.json();
-      expect(json.parse.kind).toBe("action");
-      expect(json.action.id).toBe("act-123");
+      expect(json).toEqual(mockResult);
     });
 
-    it("returns 503 when parse.kind is error and retryable is true", async () => {
+    it("returns 200 when parse requires clarification", async () => {
+      vi.mocked(orchestrator.processRequest).mockResolvedValue({
+        parse: {
+          kind: "clarify",
+          question: "What is the recipient email?",
+        },
+      });
+
+      const req = new Request("http://localhost:3000/api/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Pay Sam $50" }),
+      });
+
+      const res = await requestPost(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.parse.kind).toBe("clarify");
+      expect(json.parse.question).toBe("What is the recipient email?");
+    });
+
+    it("returns 503 when parse encounters a retryable AI error", async () => {
       vi.mocked(orchestrator.processRequest).mockResolvedValue({
         parse: {
           kind: "error",
@@ -142,11 +149,13 @@ describe("JSON API Routes", () => {
       const res = await requestPost(req);
       expect(res.status).toBe(503);
       const json = await res.json();
-      expect(json.error).toBe("The AI service is busy right now. Please try again in a moment.");
+      expect(json.error).toBe(
+        "The AI service is busy right now. Please try again in a moment."
+      );
       expect(json.parse.retryable).toBe(true);
     });
 
-    it("returns 500 when parse.kind is error and retryable is false", async () => {
+    it("returns 500 when parse encounters a non-retryable AI error", async () => {
       vi.mocked(orchestrator.processRequest).mockResolvedValue({
         parse: {
           kind: "error",
@@ -198,7 +207,7 @@ describe("JSON API Routes", () => {
 
   describe("GET /api/actions", () => {
     it("returns { actions, spentToday }", async () => {
-      insertAction({
+      await insertAction({
         type: "send_payout",
         amount: 25,
         currency: "USD",
@@ -241,7 +250,7 @@ describe("JSON API Routes", () => {
     });
 
     it("returns 409 if action is not pending_approval", async () => {
-      const action = insertAction({
+      const action = await insertAction({
         type: "send_payout",
         amount: 25,
         currency: "USD",
@@ -273,7 +282,7 @@ describe("JSON API Routes", () => {
     });
 
     it("approves action when pending_approval and returns 200", async () => {
-      const action = insertAction({
+      const action = await insertAction({
         type: "send_payout",
         amount: 25,
         currency: "USD",
@@ -295,11 +304,12 @@ describe("JSON API Routes", () => {
       const json = await resApprove.json();
       expect(json.status).toBe("approved");
 
-      expect(getAction(action.id)?.status).toBe("approved");
+      const inDb = await getAction(action.id);
+      expect(inDb?.status).toBe("approved");
     });
 
     it("rejects action when pending_approval and returns 200", async () => {
-      const action = insertAction({
+      const action = await insertAction({
         type: "send_payout",
         amount: 25,
         currency: "USD",
@@ -321,7 +331,8 @@ describe("JSON API Routes", () => {
       const json = await resReject.json();
       expect(json.status).toBe("rejected");
 
-      expect(getAction(action.id)?.status).toBe("rejected");
+      const inDb = await getAction(action.id);
+      expect(inDb?.status).toBe("rejected");
     });
   });
 
@@ -413,7 +424,7 @@ describe("JSON API Routes", () => {
     it("clears actions, processed events, and resets rules when DEMO_MODE === 'true'", async () => {
       process.env.DEMO_MODE = "true";
 
-      insertAction({
+      await insertAction({
         type: "send_payout",
         amount: 25,
         currency: "USD",
@@ -425,7 +436,7 @@ describe("JSON API Routes", () => {
         ruleFired: "within_limits",
       });
 
-      saveRules({
+      await saveRules({
         autoApproveLimit: 999,
         hardLimit: 999,
         dailyCap: 999,

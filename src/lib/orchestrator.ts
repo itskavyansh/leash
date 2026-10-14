@@ -43,13 +43,13 @@ export async function handleRequest(
     return { parse };
   }
 
-  const rules = getRules();
-  const spentToday = getSpentToday();
+  const rules = await getRules();
+  const spentToday = await getSpentToday();
   const policyResult = evaluate(parse.action, rules, spentToday);
 
   const status = mapDecisionToStatus(policyResult.decision);
 
-  const storedAction = insertAction({
+  const storedAction = await insertAction({
     type: parse.action.type,
     amount: parse.action.amount,
     currency: parse.action.currency,

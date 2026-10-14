@@ -3,7 +3,7 @@
 > **An AI agent that runs your PayPal money tasks within rules you set.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-92%20passing-brightgreen)](https://github.com/itskavyansh/leash)
+[![Tests](https://img.shields.io/badge/Tests-passing-brightgreen)](https://github.com/itskavyansh/leash)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16.4-black)](https://nextjs.org)
 
 ---
@@ -36,7 +36,7 @@ Instead of letting an LLM execute payment APIs directly:
 - **Deterministic Policy Engine**: Evaluates every action against financial rules before any payment gateway request is made.
 - **Approval Inbox**: Pending actions requiring human review are staged as interactive cards where admins can inspect policy reasons, approve, or reject.
 - **Atomic Execution & Idempotency**: Payment execution uses atomic database claims (`status = 'executing'`) and deterministic PayPal idempotency keys (`PayPal-Request-Id`) to guarantee against double-spending or race conditions.
-- **Real-Time Settlement via Webhooks**: Ingests, cryptographically verifies, and reconciles PayPal sandbox webhooks (invoices paid, payouts completed/failed, captures refunded) into an immutable SQLite audit ledger.
+- **Real-Time Settlement via Webhooks**: Ingests, cryptographically verifies, and reconciles PayPal sandbox webhooks (invoices paid, payouts completed/failed, captures refunded) into an immutable Postgres audit ledger.
 - **AG Grid Audit Ledger**: Enterprise-grade table featuring multi-column sorting, built-in type filters, a quick-search filter, and a slide-over details drawer showing full request text, policy triggers, and PayPal IDs.
 - **Configurable Policy Panel**: Adjust auto-approve limits, hard limits, daily caps, allowed recipient allowlists, and blocked action types with instant validation.
 - **One-Click Demo Reset**: Reset actions, processed webhook deduplication logs, and policy rules back to seed state when demo mode is active.
@@ -62,14 +62,14 @@ flowchart TD
     Inbox -->|POST /api/actions/:id/approve| ApproveRoute["Approve Action"]
     ApproveRoute -->|Re-verify Hard Checks| AutoExec
     
-    AutoExec -->|Atomic DB Claim| SQLite[(SQLite Database)]
+    AutoExec -->|Atomic DB Claim| Postgres[(Postgres / Supabase)]
     AutoExec -->|Idempotent REST Call| PayPal["PayPal Sandbox APIs<br/>(Invoices / Payouts / Refunds)"]
     
     PayPal -.->|Webhook Event| WebhookRoute["/api/webhooks/paypal"]
     WebhookRoute -->|Signature Verification| WebhookVerify["Verify Signature"]
-    WebhookVerify -->|Reconcile Status| SQLite
+    WebhookVerify -->|Reconcile Status| Postgres
     
-    SQLite -->|GET /api/actions| LedgerUI["AG Grid Audit Ledger"]
+    Postgres -->|GET /api/actions| LedgerUI["AG Grid Audit Ledger"]
 ```
 
 ---
@@ -79,7 +79,7 @@ flowchart TD
 The policy engine operates as a pure, deterministic function (`evaluate(action, rules, spentToday)`). It executes in a strict evaluation order where **Hard Rules** block immediately, **Soft Limits** route to human approval, and only requests passing all thresholds are auto-approved:
 
 | Order | Rule Check | Condition | Decision | Rule Triggered |
-| :---: | :--- | :--- | :---: | :--- |
+| :---: | :--- | :--- | :--- | :--- |
 | **1** | **Amount Validation** | Amount is non-positive or non-finite | **`blocked`** | `invalid_amount` |
 | **2** | **Action Type Block** | Action type is in `blockedActionTypes` | **`blocked`** | `blocked_action_type` |
 | **3** | **Recipient Allowlist** | `send_payout` recipient not in `allowedRecipients` | **`blocked`** | `recipient_not_allowed` |
@@ -96,14 +96,36 @@ The policy engine operates as a pure, deterministic function (`evaluate(action, 
 
 - **[Next.js 16 (App Router)](https://nextjs.org/)**: Full-stack framework with React 19, Turbopack, and server-side Route Handlers.
 - **[TypeScript](https://www.typescriptlang.org/)**: Strict end-to-end type safety without any `any` types.
-- **[SQLite (`better-sqlite3`)](https://github.com/WiseLibs/better-sqlite3)**: Fast local database with WAL mode storing actions, policy rules, and webhook deduplication records.
+- **[Postgres (Supabase)](https://supabase.com/)**: Hosted PostgreSQL database with SSL connection pooling, Row Level Security (RLS) enabled, and transactional resets.
+- **[PGlite](https://pglite.dev/)**: Embedded WASM/in-memory Postgres used for fast, self-contained automated tests without requiring external database dependencies.
 - **[Google Gemini (`@google/genai`)](https://github.com/google-gemini/gemini-api-js)**: Native structured tool-calling for intent extraction.
 - **[Zod](https://zod.dev/)**: Runtime schema validation for tool calls, API request bodies, and rule mutations.
 - **[PayPal Sandbox APIs](https://developer.paypal.com/)**: REST integrations for Invoicing v2, Payouts v1, Captures/Refunds v2, and Webhooks v1.
 - **[AG Grid Community (v36)](https://www.ag-grid.com/)**: Fast financial grid with sorting, type filtering, quick-search, and custom cell renderers.
 - **[Tailwind CSS v4](https://tailwindcss.com/)**: Modern dark-mode interface with accessible states and responsive design.
-- **[Vitest](https://vitest.dev/)**: Test runner executing 90+ unit tests across policies, database, webhooks, orchestrator, and route handlers.
+- **[Vitest](https://vitest.dev/)**: Test runner executing comprehensive unit and integration tests across policies, database, webhooks, orchestrator, and route handlers.
 - **[Render](https://render.com/)**: Automated deployment configuration via Infrastructure-as-Code Blueprint (`render.yaml`).
+
+---
+
+## Database Setup
+
+Leash uses Postgres for persistent storage, hosted on Supabase (or any Postgres provider).
+
+1. **Create a Supabase project**:
+   - Go to [database.new](https://database.new) and create a project.
+2. **Retrieve Connection String**:
+   - Go to **Project Settings** -> **Database** -> **Connection string**.
+   - Use the **Session pooler** (or direct connection) URI.
+3. **Set `DATABASE_URL`**:
+   - Add your connection string to `.env.local` (and in your production host environment variables):
+     ```ini
+     DATABASE_URL=postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres
+     ```
+4. **Automatic Table Initialization**:
+   - Tables (`rules`, `actions`, `processed_events`) and Row Level Security (RLS) are created automatically on the first database query. You do not need to run manual SQL migrations.
+5. **Testing with PGlite**:
+   - Automated tests run against an in-memory instance of `@electric-sql/pglite`. No external database connection or Supabase project is needed to run `npm test`.
 
 ---
 
@@ -135,6 +157,9 @@ The policy engine operates as a pure, deterministic function (`evaluate(action, 
    ```
    Fill in the required credentials in `.env.local`:
    ```ini
+   # Database (Postgres / Supabase)
+   DATABASE_URL=postgresql://...
+
    # PayPal Sandbox Credentials
    PAYPAL_ENV=sandbox
    PAYPAL_CLIENT_ID=your_sandbox_client_id
@@ -212,7 +237,7 @@ This triggers synthetic PayPal webhook payloads against your local database to v
 - **Code-Enforced Policies**: Rules are never left to prompt engineering or LLM discretion. Every financial decision is calculated deterministically in TypeScript.
 - **Strict Injection Defense**: System prompts mandate that user input is treated strictly as plain data. Any prompt injection attempting to bypass limits or approve transfers is ignored.
 - **PayPal Idempotency Keys**: All outbound calls generate unique `PayPal-Request-Id` headers derived from internal UUIDs, guaranteeing safe retries without duplicate payments.
-- **Atomic Concurrency Protection**: Actions transition to `executing` status via atomic SQLite `UPDATE ... WHERE status = 'approved'` statements, preventing concurrent workers from running the same action twice.
+- **Atomic Concurrency Protection**: Actions transition to `executing` status via atomic Postgres `UPDATE actions SET status = 'executing' WHERE id = $1 AND status = 'approved' RETURNING id` queries, preventing concurrent workers from running the same action twice.
 - **Production Webhook Verification**: `WEBHOOK_SKIP_VERIFY` is automatically ignored in `NODE_ENV === "production"`, enforcing cryptographic validation of PayPal transmission signatures (`paypal-transmission-sig`, cert URL, and timestamp).
 - **Anti-Spam Rate Limiting**: Write endpoints (`POST /api/request`, approve, and reject) are protected by a sliding-window rate limiter (20 requests per minute per IP), returning HTTP 429 when exceeded.
 

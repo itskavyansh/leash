@@ -6,6 +6,6 @@ export async function POST(): Promise<NextResponse> {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  resetAll();
+  await resetAll();
   return NextResponse.json({ message: "Demo data reset successfully" }, { status: 200 });
 }

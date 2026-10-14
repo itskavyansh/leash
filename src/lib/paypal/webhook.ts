@@ -121,14 +121,14 @@ export async function verifyWebhook(
  * Idempotent via processed_events table: only events that are successfully handled
  * are recorded as processed, so unhandled/unmatched events can be retried.
  */
-export function applyWebhookEvent(
+export async function applyWebhookEvent(
   event: WebhookEventPayload
-): WebhookApplyResult {
+): Promise<WebhookApplyResult> {
   if (!event || typeof event !== "object" || !event.id) {
     return { handled: false, note: "invalid_event" };
   }
 
-  if (isEventProcessed(event.id)) {
+  if (await isEventProcessed(event.id)) {
     return { handled: true, note: "duplicate" };
   }
 
@@ -148,14 +148,14 @@ export function applyWebhookEvent(
       return { handled: false, note: "missing_payout_batch_id" };
     }
 
-    const action = findActionByPaypalId(payoutBatchId);
+    const action = await findActionByPaypalId(payoutBatchId);
     if (!action) {
       return { handled: false, note: `no_action_for_batch_${payoutBatchId}` };
     }
 
     if (eventType === "PAYMENT.PAYOUTS-ITEM.SUCCEEDED") {
-      updateAction(action.id, { paypalStatus: "SUCCESS" });
-      recordProcessedEvent(event.id);
+      await updateAction(action.id, { paypalStatus: "SUCCESS" });
+      await recordProcessedEvent(event.id);
       return { handled: true, actionId: action.id, note: "payout_item_succeeded" };
     }
 
@@ -177,12 +177,12 @@ export function applyWebhookEvent(
         ? `Payout item ${statusName.toLowerCase()}`
         : undefined;
 
-      updateAction(action.id, {
+      await updateAction(action.id, {
         paypalStatus: statusName,
         ...(errorNote ? { errorMessage: errorNote } : {}),
       });
 
-      recordProcessedEvent(event.id);
+      await recordProcessedEvent(event.id);
       return { handled: true, actionId: action.id, note: `payout_item_${statusName.toLowerCase()}` };
     }
   }
@@ -201,14 +201,14 @@ export function applyWebhookEvent(
       return { handled: false, note: "missing_batch_id" };
     }
 
-    const action = findActionByPaypalId(batchId);
+    const action = await findActionByPaypalId(batchId);
     if (!action) {
       return { handled: false, note: `no_action_for_batch_${batchId}` };
     }
 
     const status = eventType === "PAYMENT.PAYOUTSBATCH.SUCCESS" ? "SUCCESS" : "DENIED";
-    updateAction(action.id, { paypalStatus: status });
-    recordProcessedEvent(event.id);
+    await updateAction(action.id, { paypalStatus: status });
+    await recordProcessedEvent(event.id);
     return { handled: true, actionId: action.id, note: `payout_batch_${status.toLowerCase()}` };
   }
 
@@ -230,7 +230,7 @@ export function applyWebhookEvent(
       return { handled: false, note: "missing_invoice_id" };
     }
 
-    const action = findActionByPaypalId(invoiceId);
+    const action = await findActionByPaypalId(invoiceId);
     if (!action) {
       return { handled: false, note: `no_action_for_invoice_${invoiceId}` };
     }
@@ -239,8 +239,8 @@ export function applyWebhookEvent(
     if (eventType === "INVOICING.INVOICE.CANCELLED") status = "CANCELLED";
     if (eventType === "INVOICING.INVOICE.REFUNDED") status = "REFUNDED";
 
-    updateAction(action.id, { paypalStatus: status });
-    recordProcessedEvent(event.id);
+    await updateAction(action.id, { paypalStatus: status });
+    await recordProcessedEvent(event.id);
     return { handled: true, actionId: action.id, note: `invoice_${status.toLowerCase()}` };
   }
 
@@ -251,13 +251,13 @@ export function applyWebhookEvent(
       return { handled: false, note: "missing_refund_id" };
     }
 
-    const action = findActionByPaypalId(refundId);
+    const action = await findActionByPaypalId(refundId);
     if (!action) {
       return { handled: false, note: `no_action_for_refund_${refundId}` };
     }
 
-    updateAction(action.id, { paypalStatus: "COMPLETED" });
-    recordProcessedEvent(event.id);
+    await updateAction(action.id, { paypalStatus: "COMPLETED" });
+    await recordProcessedEvent(event.id);
     return { handled: true, actionId: action.id, note: "refund_completed" };
   }
 
