@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import type { Rules, ActionType } from "@/lib/types";
+import { LimitRuler } from "./LimitRuler";
 
 interface RulesPanelProps {
   rules: Rules | null;
@@ -7,9 +8,9 @@ interface RulesPanelProps {
 }
 
 const ACTION_TYPE_OPTIONS: { type: ActionType; label: string }[] = [
-  { type: "send_payout", label: "Send Payout" },
-  { type: "send_invoice", label: "Send Invoice" },
-  { type: "issue_refund", label: "Issue Refund" },
+  { type: "send_invoice", label: "Send invoices" },
+  { type: "send_payout", label: "Pay people" },
+  { type: "issue_refund", label: "Issue refunds" },
 ];
 
 export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) => {
@@ -37,12 +38,12 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmed)) {
-      setEmailError("Please enter a valid email address");
+      setEmailError("Please enter a valid email address.");
       return;
     }
 
     if (allowedRecipients.includes(trimmed)) {
-      setEmailError("Email already in allowlist");
+      setEmailError("Email already in allowlist.");
       return;
     }
 
@@ -98,115 +99,136 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
   };
 
   return (
-    <div className="bg-[#121620] border border-zinc-800 rounded-2xl p-5 shadow-xl flex flex-col gap-5">
-      <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+    <section className="bg-[var(--color-surface)] border border-[var(--color-line)] rounded-[var(--radius-panel)] p-5 space-y-5">
+      {/* Title */}
+      <div className="flex items-baseline justify-between pb-3 border-b border-[var(--color-line)]">
         <div>
-          <h2 className="text-sm font-semibold text-zinc-100 flex items-center gap-2">
-            <span>Policy Engine Rules</span>
-          </h2>
-          <p className="text-xs text-zinc-400 mt-0.5">Control autonomous approval boundaries</p>
+          <h2 className="text-base font-semibold text-[var(--color-ink)]">Your rules</h2>
+          <p className="text-[13px] text-[var(--color-ink-muted)]">
+            Define limits and autonomous policy boundaries
+          </p>
         </div>
         {saveSuccess && (
-          <span className="text-xs font-medium text-emerald-400 flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full animate-fade-in">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
+          <span className="text-[13px] font-medium text-[var(--color-ok)]">
             Saved
           </span>
         )}
       </div>
 
+      {/* Live LimitRuler preview at the top of RulesPanel */}
+      <div className="pb-3 border-b border-[var(--color-line)]">
+        <LimitRuler
+          autoApproveLimit={autoApproveLimit}
+          hardLimit={hardLimit}
+        />
+      </div>
+
       <form onSubmit={handleSave} className="space-y-4">
-        {/* Limits */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Limit fields */}
+        <div className="space-y-3">
           <div>
-            <label htmlFor="autoApproveLimit" className="block text-xs font-medium text-zinc-400 mb-1">
-              Auto-Approve Limit ($)
+            <label htmlFor="autoApproveLimit" className="block text-[13px] font-medium text-[var(--color-ink)] mb-1">
+              Sends itself up to
             </label>
-            <input
-              id="autoApproveLimit"
-              type="number"
-              min={0}
-              step={1}
-              value={autoApproveLimit}
-              onChange={(e) => setAutoApproveLimit(parseFloat(e.target.value) || 0)}
-              className="w-full bg-[#0b0e14] border border-zinc-800 rounded-xl px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-              required
-            />
-            <span className="text-[10px] text-zinc-500 mt-0.5 block">Under this runs automatically</span>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-ink-muted)] text-sm">
+                $
+              </span>
+              <input
+                id="autoApproveLimit"
+                type="number"
+                min={0}
+                step={1}
+                value={autoApproveLimit}
+                onChange={(e) => setAutoApproveLimit(parseFloat(e.target.value) || 0)}
+                className="w-full h-9 pl-7 pr-3 text-sm tabular-nums text-[var(--color-ink)] bg-transparent border border-[var(--color-line)] rounded-[var(--radius-control)] focus:outline-none focus:ring-2 focus:ring-[var(--color-ink)] focus:ring-offset-1"
+                required
+              />
+            </div>
+            <p className="text-xs text-[var(--color-ink-muted)] mt-1">
+              Actions under this amount execute without manual approval.
+            </p>
           </div>
 
           <div>
-            <label htmlFor="hardLimit" className="block text-xs font-medium text-zinc-400 mb-1">
-              Hard Ceiling Limit ($)
+            <label htmlFor="hardLimit" className="block text-[13px] font-medium text-[var(--color-ink)] mb-1">
+              Blocked above
             </label>
-            <input
-              id="hardLimit"
-              type="number"
-              min={0}
-              step={1}
-              value={hardLimit}
-              onChange={(e) => setHardLimit(parseFloat(e.target.value) || 0)}
-              className="w-full bg-[#0b0e14] border border-zinc-800 rounded-xl px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-              required
-            />
-            <span className="text-[10px] text-zinc-500 mt-0.5 block">Strict hard cutoff</span>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-ink-muted)] text-sm">
+                $
+              </span>
+              <input
+                id="hardLimit"
+                type="number"
+                min={0}
+                step={1}
+                value={hardLimit}
+                onChange={(e) => setHardLimit(parseFloat(e.target.value) || 0)}
+                className="w-full h-9 pl-7 pr-3 text-sm tabular-nums text-[var(--color-ink)] bg-transparent border border-[var(--color-line)] rounded-[var(--radius-control)] focus:outline-none focus:ring-2 focus:ring-[var(--color-ink)] focus:ring-offset-1"
+                required
+              />
+            </div>
+            <p className="text-xs text-[var(--color-ink-muted)] mt-1">
+              Strict ceiling. Any action above this amount is blocked.
+            </p>
           </div>
 
           <div>
-            <label htmlFor="dailyCap" className="block text-xs font-medium text-zinc-400 mb-1">
-              Daily Spending Cap ($)
+            <label htmlFor="dailyCap" className="block text-[13px] font-medium text-[var(--color-ink)] mb-1">
+              Daily spending cap
             </label>
-            <input
-              id="dailyCap"
-              type="number"
-              min={1}
-              step={1}
-              value={dailyCap}
-              onChange={(e) => setDailyCap(parseFloat(e.target.value) || 1)}
-              className="w-full bg-[#0b0e14] border border-zinc-800 rounded-xl px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-              required
-            />
-            <span className="text-[10px] text-zinc-500 mt-0.5 block">Resets at midnight</span>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-ink-muted)] text-sm">
+                $
+              </span>
+              <input
+                id="dailyCap"
+                type="number"
+                min={1}
+                step={1}
+                value={dailyCap}
+                onChange={(e) => setDailyCap(parseFloat(e.target.value) || 1)}
+                className="w-full h-9 pl-7 pr-3 text-sm tabular-nums text-[var(--color-ink)] bg-transparent border border-[var(--color-line)] rounded-[var(--radius-control)] focus:outline-none focus:ring-2 focus:ring-[var(--color-ink)] focus:ring-offset-1"
+                required
+              />
+            </div>
+            <p className="text-xs text-[var(--color-ink-muted)] mt-1">
+              Total budget permitted per calendar day.
+            </p>
           </div>
         </div>
 
-        {/* Blocked Action Types */}
-        <div>
-          <label className="block text-xs font-medium text-zinc-400 mb-1.5">
-            Blocked Action Types
-          </label>
-          <div className="flex flex-wrap gap-2">
+        {/* Never allow (blocked action types) with three checkboxes */}
+        <div className="pt-2 border-t border-[var(--color-line)]">
+          <span className="block text-[13px] font-medium text-[var(--color-ink)] mb-1">
+            Never allow
+          </span>
+          <div className="space-y-2 mt-2">
             {ACTION_TYPE_OPTIONS.map(({ type, label }) => {
-              const isBlocked = blockedActionTypes.includes(type);
+              const isChecked = blockedActionTypes.includes(type);
               return (
-                <button
+                <label
                   key={type}
-                  type="button"
-                  onClick={() => toggleBlockedType(type)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer flex items-center gap-1.5 ${
-                    isBlocked
-                      ? "bg-rose-500/15 border-rose-500/30 text-rose-300"
-                      : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700"
-                  }`}
+                  className="flex items-center gap-2.5 text-sm text-[var(--color-ink)] cursor-pointer select-none"
                 >
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      isBlocked ? "bg-rose-500" : "bg-zinc-600"
-                    }`}
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => toggleBlockedType(type)}
+                    className="w-4 h-4 rounded border-[var(--color-line-strong)] text-[var(--color-ink)] focus:ring-[var(--color-ink)] focus:ring-offset-1"
                   />
                   <span>{label}</span>
-                  {isBlocked && <span className="text-[10px] font-mono text-rose-400">(Blocked)</span>}
-                </button>
+                </label>
               );
             })}
           </div>
         </div>
 
-        {/* Allowed Recipients Allowlist */}
-        <div>
-          <label htmlFor="allowed-recipient-input" className="block text-xs font-medium text-zinc-400 mb-1.5">
-            Allowed Recipients (Allowlist)
+        {/* Allowed payout recipients */}
+        <div className="pt-2 border-t border-[var(--color-line)]">
+          <label htmlFor="allowed-recipient-input" className="block text-[13px] font-medium text-[var(--color-ink)] mb-1">
+            Allowed payout recipients
           </label>
           <div className="flex gap-2 mb-2">
             <input
@@ -215,7 +237,7 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
               value={newEmail}
               onChange={(e) => setNewEmail(e.target.value)}
               placeholder="e.g. sb-sub@example.com"
-              className="flex-1 bg-[#0b0e14] border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              className="flex-1 h-9 px-3 text-sm text-[var(--color-ink)] placeholder-[var(--color-ink-muted)] bg-transparent border border-[var(--color-line)] rounded-[var(--radius-control)] focus:outline-none focus:ring-2 focus:ring-[var(--color-ink)] focus:ring-offset-1"
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -226,32 +248,33 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
             <button
               type="button"
               onClick={() => handleAddEmail()}
-              className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium transition-all cursor-pointer"
+              className="h-9 px-3 rounded-[var(--radius-control)] border border-[var(--color-line)] hover:bg-[var(--color-paper)] text-xs font-medium text-[var(--color-ink)] transition-btn cursor-pointer"
             >
               Add
             </button>
           </div>
 
           {emailError && (
-            <p className="text-xs text-rose-400 mb-2">{emailError}</p>
+            <p className="text-xs text-[var(--color-stop)] mb-2">{emailError}</p>
           )}
 
-          <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1.5 rounded-xl bg-[#0b0e14] border border-zinc-800/80">
+          {/* Email chips with remove control */}
+          <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pt-1">
             {allowedRecipients.length === 0 ? (
-              <span className="text-xs text-zinc-600 italic px-2 py-1">
-                No recipients allowed yet (all transfers will require approval or be blocked)
+              <span className="text-xs text-[var(--color-ink-muted)]">
+                No recipients allowed yet. Transfers will require manual approval or be blocked.
               </span>
             ) : (
               allowedRecipients.map((email) => (
                 <span
                   key={email}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-300"
+                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[var(--radius-control)] bg-[var(--color-paper)] border border-[var(--color-line)] text-xs text-[var(--color-ink)]"
                 >
                   <span className="truncate max-w-[200px]">{email}</span>
                   <button
                     type="button"
                     onClick={() => handleRemoveEmail(email)}
-                    className="text-zinc-500 hover:text-rose-400 transition-colors cursor-pointer"
+                    className="text-[var(--color-ink-muted)] hover:text-[var(--color-stop)] transition-colors cursor-pointer text-sm font-semibold leading-none"
                     aria-label={`Remove ${email}`}
                   >
                     ×
@@ -263,21 +286,21 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
         </div>
 
         {apiError && (
-          <div className="p-3 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-300 text-xs" role="alert">
+          <div className="p-2.5 rounded-[var(--radius-control)] border border-[var(--color-stop)] bg-[var(--color-stop-tint)] text-[var(--color-stop)] text-xs" role="alert">
             {apiError}
           </div>
         )}
 
-        <div className="pt-2 flex justify-end">
+        <div className="pt-3 border-t border-[var(--color-line)] flex justify-end">
           <button
             type="submit"
             disabled={isSaving}
-            className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-all shadow-md shadow-indigo-600/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+            className="h-9 px-4 rounded-[var(--radius-control)] bg-[var(--color-ink)] hover:bg-[#222733] text-[var(--color-surface)] text-sm font-medium transition-btn disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--color-ink)] focus:ring-offset-2 min-w-[100px]"
           >
-            {isSaving ? "Saving..." : "Save Policy Rules"}
+            {isSaving ? "Saving..." : "Save rules"}
           </button>
         </div>
       </form>
-    </div>
+    </section>
   );
 };
