@@ -27,15 +27,6 @@ export async function createSingleModelProvider(
   providerType: string,
   model: string
 ): Promise<LlmProvider> {
-  if (providerType === "anthropic") {
-    const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-    if (!apiKey) {
-      throw new Error("Missing required environment variable ANTHROPIC_API_KEY.");
-    }
-    const { AnthropicProvider } = await import("./anthropic");
-    return new AnthropicProvider(model, apiKey);
-  }
-
   if (providerType === "gemini") {
     const apiKey = process.env.GEMINI_API_KEY?.trim();
     if (!apiKey) {
@@ -46,7 +37,7 @@ export async function createSingleModelProvider(
   }
 
   throw new Error(
-    `Unsupported LLM_PROVIDER: "${providerType}". Expected "anthropic" or "gemini".`
+    `Unsupported LLM_PROVIDER: "${providerType}". Expected "gemini".`
   );
 }
 
@@ -100,21 +91,30 @@ export async function getProvider(): Promise<LlmProvider> {
 
   if (!providerType) {
     throw new Error(
-      "Missing required environment variable LLM_PROVIDER. Expected 'anthropic' or 'gemini'."
+      "Missing required environment variable LLM_PROVIDER. Expected 'gemini'."
     );
   }
 
   if (!primaryModel) {
     throw new Error(
-      "Missing required environment variable LLM_MODEL. Please specify a model name (e.g. 'claude-3-5-sonnet-latest' or 'gemini-2.5-flash')."
+      "Missing required environment variable LLM_MODEL. Please specify a model name (e.g. 'gemini-2.5-flash')."
     );
   }
 
-  const rawFallbacks = process.env.LLM_FALLBACK_MODELS?.trim();
+  let rawFallbacks = process.env.LLM_FALLBACK_MODELS?.trim();
+  if (rawFallbacks) {
+    if (
+      (rawFallbacks.startsWith('"') && rawFallbacks.endsWith('"')) ||
+      (rawFallbacks.startsWith("'") && rawFallbacks.endsWith("'"))
+    ) {
+      rawFallbacks = rawFallbacks.slice(1, -1).trim();
+    }
+  }
+
   const fallbackModels = rawFallbacks
     ? rawFallbacks
         .split(",")
-        .map((m) => m.trim())
+        .map((m) => m.trim().replace(/^['"]|['"]$/g, ""))
         .filter((m) => m.length > 0 && m !== primaryModel)
     : [];
 

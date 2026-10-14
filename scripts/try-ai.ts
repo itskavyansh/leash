@@ -2,7 +2,7 @@
  * scripts/try-ai.ts
  *
  * Runs test natural language inputs through handleRequest using the real configured
- * LLM provider (Anthropic or Gemini) and prints the parsed action, policy decision,
+ * LLM provider (Gemini) and prints the parsed action, policy decision,
  * and reason for each.
  *
  * Uses an in-memory SQLite DB so no data is written to disk.

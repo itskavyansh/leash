@@ -38,7 +38,5 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
-      - key: ANTHROPIC_API_KEY
-        sync: false
       # Note: WEBHOOK_SKIP_VERIFY is intentionally omitted in production.
       # When deployed to production, PayPal webhook signatures must be verified.

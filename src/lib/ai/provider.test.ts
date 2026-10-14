@@ -51,8 +51,8 @@ describe("FallbackLlmProvider and model fallback", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const fallbackProvider = new FallbackLlmProvider(
-      ["gemini-2.5-pro", "gemini-2.5-flash"],
-      async (model) => (model === "gemini-2.5-pro" ? mockPrimary : mockFallback)
+      ["primary-test-model", "fallback-test-model"],
+      async (model) => (model === "primary-test-model" ? mockPrimary : mockFallback)
     );
 
     const result = await fallbackProvider.complete({
@@ -65,7 +65,7 @@ describe("FallbackLlmProvider and model fallback", () => {
     expect(mockPrimary.complete).toHaveBeenCalledTimes(1);
     expect(mockFallback.complete).toHaveBeenCalledTimes(1);
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Switching to fallback model: gemini-2.5-flash")
+      expect.stringContaining("Switching to fallback model: fallback-test-model")
     );
   });
 
@@ -131,8 +131,8 @@ describe("FallbackLlmProvider and model fallback", () => {
 
   it("getProvider parses LLM_FALLBACK_MODELS and initializes FallbackLlmProvider", async () => {
     process.env.LLM_PROVIDER = "gemini";
-    process.env.LLM_MODEL = "gemini-2.5-pro";
-    process.env.LLM_FALLBACK_MODELS = "gemini-2.5-flash, gemini-2.0-flash";
+    process.env.LLM_MODEL = "test-primary-model";
+    process.env.LLM_FALLBACK_MODELS = '"test-fallback-1, test-fallback-2"';
     process.env.GEMINI_API_KEY = "test-key";
 
     const provider = await getProvider();

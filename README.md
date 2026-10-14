@@ -3,7 +3,7 @@
 > **An AI agent that runs your PayPal money tasks within rules you set.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-86%20passing-brightgreen)](https://github.com/itskavyansh/leash)
+[![Tests](https://img.shields.io/badge/Tests-92%20passing-brightgreen)](https://github.com/itskavyansh/leash)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16.4-black)](https://nextjs.org)
 
 ---
@@ -31,8 +31,8 @@ Instead of letting an LLM execute payment APIs directly:
 
 ## Features
 
-- **Natural Language Intent Parsing**: Accepts plain-English requests (e.g., *"Pay Sam $120 for the illustration"* or *"Invoice Acme Corp $850 for the logo design"*), forcing structured tool calls via Gemini or Anthropic Claude with strict Zod validation.
-- **Model Fallback Cascade**: If the primary LLM model encounters transient outages or rate limits (HTTP 429/503), requests automatically fall back across a configured list of backup models.
+- **Natural Language Intent Parsing**: Accepts plain-English requests (e.g., *"Pay Sam $120 for the illustration"* or *"Invoice Acme Corp $850 for the logo design"*), forcing structured tool calls via Google Gemini with strict Zod validation.
+- **Dynamic Model Fallback Cascade**: If the primary Gemini model encounters transient outages or rate limits (HTTP 429/503), requests automatically cycle through any fallback models specified in your environment (`LLM_FALLBACK_MODELS`).
 - **Deterministic Policy Engine**: Evaluates every action against financial rules before any payment gateway request is made.
 - **Approval Inbox**: Pending actions requiring human review are staged as interactive cards where admins can inspect policy reasons, approve, or reject.
 - **Atomic Execution & Idempotency**: Payment execution uses atomic database claims (`status = 'executing'`) and deterministic PayPal idempotency keys (`PayPal-Request-Id`) to guarantee against double-spending or race conditions.
@@ -50,7 +50,7 @@ flowchart TD
     User([User / Browser UI]) -->|POST /api/request| APIRequest["/api/request"]
     APIRequest -->|Rate Limit Check| RateLimit["In-Memory Rate Limiter"]
     RateLimit --> Orchestrator["Orchestrator"]
-    Orchestrator -->|System Prompt & Tools| LLM["LLM Provider (Gemini / Claude)"]
+    Orchestrator -->|System Prompt & Tools| LLM["LLM Provider (Gemini)"]
     LLM -->|Fallback on 429/503| Fallback["Model Fallback Cascade"]
     LLM -->|Structured Parse| ZodParse["Zod Action Schema"]
     ZodParse --> PolicyEngine["Deterministic Policy Engine"]
@@ -97,7 +97,7 @@ The policy engine operates as a pure, deterministic function (`evaluate(action, 
 - **[Next.js 16 (App Router)](https://nextjs.org/)**: Full-stack framework with React 19, Turbopack, and server-side Route Handlers.
 - **[TypeScript](https://www.typescriptlang.org/)**: Strict end-to-end type safety without any `any` types.
 - **[SQLite (`better-sqlite3`)](https://github.com/WiseLibs/better-sqlite3)**: Fast local database with WAL mode storing actions, policy rules, and webhook deduplication records.
-- **[Google Gemini (`@google/genai`)](https://github.com/google-gemini/gemini-api-js)** & **[Anthropic Claude (`@anthropic-ai/sdk`)](https://github.com/anthropics/anthropic-sdk-typescript)**: Native structured tool-calling for intent extraction.
+- **[Google Gemini (`@google/genai`)](https://github.com/google-gemini/gemini-api-js)**: Native structured tool-calling for intent extraction.
 - **[Zod](https://zod.dev/)**: Runtime schema validation for tool calls, API request bodies, and rule mutations.
 - **[PayPal Sandbox APIs](https://developer.paypal.com/)**: REST integrations for Invoicing v2, Payouts v1, Captures/Refunds v2, and Webhooks v1.
 - **[AG Grid Community (v36)](https://www.ag-grid.com/)**: Fast financial grid with sorting, type filtering, quick-search, and custom cell renderers.
@@ -142,17 +142,11 @@ The policy engine operates as a pure, deterministic function (`evaluate(action, 
    PAYPAL_WEBHOOK_ID=your_webhook_id_here
    WEBHOOK_SKIP_VERIFY=true
 
-   # AI Provider Configuration ("gemini" or "anthropic")
+   # AI Provider Configuration (Google Gemini)
    LLM_PROVIDER=gemini
    LLM_MODEL=gemini-2.5-flash
-   LLM_FALLBACK_MODELS=gemini-2.5-pro,gemini-2.0-flash
+   LLM_FALLBACK_MODELS=model-name-2,model-name-3
    GEMINI_API_KEY=your_gemini_api_key
-
-   # If using Anthropic:
-   # LLM_PROVIDER=anthropic
-   # LLM_MODEL=claude-3-5-sonnet-latest
-   # LLM_FALLBACK_MODELS=claude-3-5-haiku-latest
-   # ANTHROPIC_API_KEY=your_anthropic_api_key
 
    # Enable Demo Mode controls (Reset button)
    DEMO_MODE=true
