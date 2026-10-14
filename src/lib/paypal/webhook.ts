@@ -44,6 +44,8 @@ export type WebhookFetchFn = <T = unknown>(
   options?: { method?: string; body?: Record<string, unknown>; requestId?: string }
 ) => Promise<T | null>;
 
+let hasWarnedProdSkip = false;
+
 /**
  * Verifies PayPal webhook signature headers against PayPal's verification endpoint.
  */
@@ -52,9 +54,18 @@ export async function verifyWebhook(
   rawBody: string,
   fetchFn: WebhookFetchFn = paypalFetch
 ): Promise<boolean> {
+  const isProd = process.env.NODE_ENV === "production";
+
   if (process.env.WEBHOOK_SKIP_VERIFY === "true") {
-    console.warn("⚠️ WEBHOOK_SKIP_VERIFY=true: skipping PayPal webhook signature verification.");
-    return true;
+    if (isProd) {
+      if (!hasWarnedProdSkip) {
+        console.warn("⚠️ WEBHOOK_SKIP_VERIFY=true was ignored because NODE_ENV === 'production'. Verifying webhook signature normally.");
+        hasWarnedProdSkip = true;
+      }
+    } else {
+      console.warn("⚠️ WEBHOOK_SKIP_VERIFY=true: skipping PayPal webhook signature verification.");
+      return true;
+    }
   }
 
   const webhookId = process.env.PAYPAL_WEBHOOK_ID?.trim();
@@ -107,7 +118,8 @@ export async function verifyWebhook(
 
 /**
  * Applies a webhook event to local state and updates matching actions.
- * Idempotent via processed_events table.
+ * Idempotent via processed_events table: only events that are successfully handled
+ * are recorded as processed, so unhandled/unmatched events can be retried.
  */
 export function applyWebhookEvent(
   event: WebhookEventPayload
@@ -119,8 +131,6 @@ export function applyWebhookEvent(
   if (isEventProcessed(event.id)) {
     return { handled: true, note: "duplicate" };
   }
-
-  recordProcessedEvent(event.id);
 
   const { event_type: eventType, resource } = event;
   if (!eventType || !resource || typeof resource !== "object") {
@@ -145,6 +155,7 @@ export function applyWebhookEvent(
 
     if (eventType === "PAYMENT.PAYOUTS-ITEM.SUCCEEDED") {
       updateAction(action.id, { paypalStatus: "SUCCESS" });
+      recordProcessedEvent(event.id);
       return { handled: true, actionId: action.id, note: "payout_item_succeeded" };
     }
 
@@ -171,6 +182,7 @@ export function applyWebhookEvent(
         ...(errorNote ? { errorMessage: errorNote } : {}),
       });
 
+      recordProcessedEvent(event.id);
       return { handled: true, actionId: action.id, note: `payout_item_${statusName.toLowerCase()}` };
     }
   }
@@ -196,6 +208,7 @@ export function applyWebhookEvent(
 
     const status = eventType === "PAYMENT.PAYOUTSBATCH.SUCCESS" ? "SUCCESS" : "DENIED";
     updateAction(action.id, { paypalStatus: status });
+    recordProcessedEvent(event.id);
     return { handled: true, actionId: action.id, note: `payout_batch_${status.toLowerCase()}` };
   }
 
@@ -227,6 +240,7 @@ export function applyWebhookEvent(
     if (eventType === "INVOICING.INVOICE.REFUNDED") status = "REFUNDED";
 
     updateAction(action.id, { paypalStatus: status });
+    recordProcessedEvent(event.id);
     return { handled: true, actionId: action.id, note: `invoice_${status.toLowerCase()}` };
   }
 
@@ -243,6 +257,7 @@ export function applyWebhookEvent(
     }
 
     updateAction(action.id, { paypalStatus: "COMPLETED" });
+    recordProcessedEvent(event.id);
     return { handled: true, actionId: action.id, note: "refund_completed" };
   }
 

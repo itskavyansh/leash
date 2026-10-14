@@ -9,6 +9,8 @@ export interface HandleRequestResult {
   action?: ActionRecord;
 }
 
+export type ProcessRequestResult = HandleRequestResult;
+
 /**
  * Maps policy decision to stored action status:
  * - approve -> "approved"

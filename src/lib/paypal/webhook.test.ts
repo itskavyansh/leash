@@ -99,9 +99,77 @@ describe("PayPal Webhook Verification & Status Reconciliation", () => {
       const res = await verifyWebhook(headers, "{}", mockFetch);
       expect(res).toBe(false);
     });
+
+    it("ignores WEBHOOK_SKIP_VERIFY in production and warns", async () => {
+      const origEnv = process.env.NODE_ENV;
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      try {
+        (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+        process.env.WEBHOOK_SKIP_VERIFY = "true";
+        delete process.env.PAYPAL_WEBHOOK_ID;
+
+        // In production, WEBHOOK_SKIP_VERIFY should be ignored and missing PAYPAL_WEBHOOK_ID should throw
+        await expect(verifyWebhook({}, "{}")).rejects.toThrow(
+          "Missing required environment variable PAYPAL_WEBHOOK_ID"
+        );
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("WEBHOOK_SKIP_VERIFY=true was ignored")
+        );
+      } finally {
+        (process.env as Record<string, string | undefined>).NODE_ENV = origEnv;
+        warnSpy.mockRestore();
+      }
+    });
   });
 
   describe("applyWebhookEvent()", () => {
+    it("does NOT record unhandled or unknown events into processed_events so retries can succeed", () => {
+      const unhandledEvent: WebhookEventPayload = {
+        id: "EV-UNHANDLED-1",
+        event_type: "CUSTOM.UNKNOWN.EVENT",
+        resource: { id: "123" },
+      };
+
+      const res1 = applyWebhookEvent(unhandledEvent);
+      expect(res1.handled).toBe(false);
+
+      // Verify that event is NOT recorded as duplicate when called again
+      const res2 = applyWebhookEvent(unhandledEvent);
+      expect(res2.handled).toBe(false);
+      expect(res2.note).not.toBe("duplicate");
+
+      // Now test unmatched action
+      const unmatchedEvent: WebhookEventPayload = {
+        id: "EV-UNMATCHED-1",
+        event_type: "PAYMENT.PAYOUTS-ITEM.SUCCEEDED",
+        resource: { payout_batch_id: "BATCH-LATER-INSERTED" },
+      };
+
+      const res3 = applyWebhookEvent(unmatchedEvent);
+      expect(res3.handled).toBe(false);
+      expect(res3.note).toContain("no_action");
+
+      // Insert action later and retry the same event id!
+      insertAction({
+        type: "send_payout",
+        amount: 50,
+        currency: "USD",
+        recipient: "sb-sub@example.com",
+        description: "Late batch",
+        status: "completed",
+        decision: "approve",
+        reason: "ok",
+        ruleFired: "within_limits",
+        paypalId: "BATCH-LATER-INSERTED",
+        paypalStatus: "PENDING",
+      });
+
+      const res4 = applyWebhookEvent(unmatchedEvent);
+      expect(res4.handled).toBe(true);
+      expect(res4.note).not.toBe("duplicate");
+    });
+
     it("updates PAYMENT.PAYOUTS-ITEM.SUCCEEDED to SUCCESS", () => {
       const action = insertAction({
         type: "send_payout",

@@ -163,7 +163,7 @@ export function getRules(db: Database.Database = getDb()): Rules {
   };
 }
 
-export function saveRules(rules: Rules, db: Database.Database = getDb()): void {
+export function saveRules(rules: Rules, db: Database.Database = getDb()): Rules {
   db.prepare(`
     INSERT INTO rules (id, autoApproveLimit, hardLimit, dailyCap, allowedRecipients, blockedActionTypes)
     VALUES (1, @autoApproveLimit, @hardLimit, @dailyCap, @allowedRecipients, @blockedActionTypes)
@@ -180,6 +180,7 @@ export function saveRules(rules: Rules, db: Database.Database = getDb()): void {
     allowedRecipients: JSON.stringify(rules.allowedRecipients),
     blockedActionTypes: JSON.stringify(rules.blockedActionTypes),
   });
+  return getRules(db);
 }
 
 export function insertAction(action: InsertActionInput, db: Database.Database = getDb()): ActionRecord {
@@ -275,6 +276,17 @@ export function recordProcessedEvent(
     VALUES (?, ?)
     ON CONFLICT(eventId) DO NOTHING
   `).run(eventId, new Date().toISOString());
+}
+
+/**
+ * Deletes all rows from actions and processed_events and restores default rules.
+ */
+export function resetAll(db: Database.Database = getDb()): void {
+  db.exec(`
+    DELETE FROM actions;
+    DELETE FROM processed_events;
+  `);
+  saveRules(DEFAULT_RULES, db);
 }
 
 /**
