@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:auth": "tsx scripts/test-auth.ts"
+    "test:auth": "tsx scripts/test-auth.ts",
+    "test:invoice": "tsx scripts/test-invoice.ts",
+    "test:payout": "tsx scripts/test-payout.ts",
+    "test:refund": "tsx scripts/test-refund.ts"
   },
   "dependencies": {
     "next": "16.4.0",
