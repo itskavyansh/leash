@@ -1,77 +1,51 @@
 import React from "react";
 import { ResetButton } from "./ResetButton";
-import { MoneyDisplay } from "./MoneyDisplay";
 
 interface HeaderProps {
-  spentToday: number;
-  dailyCap: number;
-  pendingCount: number;
   demoMode: boolean;
   onResetComplete: () => Promise<void>;
+  // keep for backwards compatibility if passed
+  spentToday?: number;
+  dailyCap?: number;
+  pendingCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  spentToday,
-  dailyCap,
   demoMode,
   onResetComplete,
 }) => {
-  const cap = dailyCap > 0 ? dailyCap : 1000;
-  const percentage = Math.min(Math.round((spentToday / cap) * 100), 100);
-  const isNearCap = percentage >= 80;
-  const isOverCap = spentToday >= cap;
-
-  let barColor = "bg-[var(--color-ink)]";
-  if (isOverCap) {
-    barColor = "bg-[var(--color-stop)]";
-  } else if (isNearCap) {
-    barColor = "bg-[var(--color-wait)]";
-  }
-
   return (
-    <header className="border-b border-[var(--color-line)] bg-[var(--color-surface)] sticky top-0 z-30">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-        {/* Left: wordmark + tagline */}
-        <div className="flex items-baseline gap-3">
-          <span className="text-xl font-semibold tracking-tight text-[var(--color-ink)]">
+    <header className="w-full flex items-center justify-between pb-4">
+      {/* Left: 28px brand-green rounded square logo mark + "Leash" in Newsreader 26px + tagline */}
+      <div className="flex items-center gap-3">
+        <div className="w-7 h-7 rounded-[var(--radius-control)] bg-[var(--color-brand)] flex items-center justify-center shrink-0">
+          {/* Inline SVG: looped line in white */}
+          <svg
+            className="w-4 h-4 text-white"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M7 12c0-2.8 2.2-5 5-5s5 2.2 5 5-2.2 5-5 5h-3" />
+            <circle cx="9" cy="17" r="1" fill="currentColor" />
+          </svg>
+        </div>
+
+        <div className="flex items-baseline gap-2.5">
+          <span className="font-serif text-[26px] font-medium text-[var(--color-ink)] leading-none">
             Leash
           </span>
-          <span className="hidden sm:inline text-sm text-[var(--color-ink-muted)]">
+          <span className="hidden sm:inline text-[13px] text-[var(--color-ink-muted)]">
             Your AI agent. Your rules.
           </span>
         </div>
-
-        {/* Right: compact meter + ResetButton */}
-        <div className="flex items-center gap-4 sm:gap-6">
-          <div className="flex items-center gap-3">
-            <div className="text-[13px] text-[var(--color-ink-muted)] flex items-baseline gap-1">
-              <span>Sent today</span>
-              <MoneyDisplay amount={spentToday} className="font-medium text-[var(--color-ink)]" />
-              <span>of</span>
-              <span className="tabular-nums font-medium text-[var(--color-ink)]">
-                ${cap.toLocaleString("en-US", { maximumFractionDigits: 0 })}
-              </span>
-            </div>
-
-            {/* 4px bar */}
-            <div
-              className="w-16 sm:w-20 h-1 bg-[var(--color-line)] rounded-full overflow-hidden"
-              role="progressbar"
-              aria-valuenow={percentage}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label="Daily spending limit used"
-            >
-              <div
-                className={`h-full transition-all duration-300 ${barColor}`}
-                style={{ width: `${percentage}%` }}
-              />
-            </div>
-          </div>
-
-          <ResetButton demoMode={demoMode} onResetComplete={onResetComplete} />
-        </div>
       </div>
+
+      {/* Right: existing ResetButton as quiet text button (demo mode only) */}
+      <ResetButton demoMode={demoMode} onResetComplete={onResetComplete} />
     </header>
   );
 };

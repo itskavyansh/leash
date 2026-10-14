@@ -364,15 +364,14 @@ export const Ledger: React.FC<LedgerProps> = ({ actions, onRefresh }) => {
                     <div key={idx} className="relative flex items-start gap-3">
                       {/* Real sequence numbered marker / state indicator */}
                       <span
-                        className={`absolute -left-6 mt-0.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-medium ${
-                          step.state === "done"
+                        className={`absolute -left-6 mt-0.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-medium ${step.state === "done"
                             ? "bg-[var(--color-ok)] text-white"
                             : step.state === "failed"
-                            ? "bg-[var(--color-stop)] text-white"
-                            : step.state === "current"
-                            ? "bg-[var(--color-live)] text-white"
-                            : "bg-[var(--color-surface)] border border-[var(--color-line-strong)] text-[var(--color-ink-muted)]"
-                        }`}
+                              ? "bg-[var(--color-stop)] text-white"
+                              : step.state === "current"
+                                ? "bg-[var(--color-live)] text-white"
+                                : "bg-[var(--color-surface)] border border-[var(--color-line-strong)] text-[var(--color-ink-muted)]"
+                          }`}
                       >
                         {idx + 1}
                       </span>

@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import type { Rules, ActionType } from "@/lib/types";
-import { LimitRuler } from "./LimitRuler";
 
 interface RulesPanelProps {
   rules: Rules | null;
@@ -99,32 +98,26 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
   };
 
   return (
-    <section className="bg-[var(--color-surface)] border border-[var(--color-line)] rounded-[var(--radius-panel)] p-5 space-y-5">
-      {/* Title */}
-      <div className="flex items-baseline justify-between pb-3 border-b border-[var(--color-line)]">
+    <section className="bg-[var(--color-surface)] border border-[var(--color-line)] rounded-[var(--radius-panel)] p-5 space-y-4">
+      {/* Title + Subtitle */}
+      <div className="flex items-baseline justify-between pb-3 border-b border-[var(--color-line-soft)]">
         <div>
-          <h2 className="text-base font-semibold text-[var(--color-ink)]">Your rules</h2>
+          <h2 className="font-serif text-[20px] font-medium text-[var(--color-ink)] leading-tight">
+            Your rules
+          </h2>
           <p className="text-[13px] text-[var(--color-ink-muted)]">
-            Define limits and autonomous policy boundaries
+            What the agent can do on its own.
           </p>
         </div>
         {saveSuccess && (
-          <span className="text-[13px] font-medium text-[var(--color-ok)]">
+          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[var(--color-ok-tint)] text-[var(--color-ok)]">
             Saved
           </span>
         )}
       </div>
 
-      {/* Live LimitRuler preview at the top of RulesPanel */}
-      <div className="pb-3 border-b border-[var(--color-line)]">
-        <LimitRuler
-          autoApproveLimit={autoApproveLimit}
-          hardLimit={hardLimit}
-        />
-      </div>
-
-      <form onSubmit={handleSave} className="space-y-4">
-        {/* Limit fields */}
+      <form onSubmit={handleSave} className="space-y-3.5">
+        {/* Limit fields: 44px inputs with brand focus ring */}
         <div className="space-y-3">
           <div>
             <label htmlFor="autoApproveLimit" className="block text-[13px] font-medium text-[var(--color-ink)] mb-1">
@@ -141,7 +134,7 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
                 step={1}
                 value={autoApproveLimit}
                 onChange={(e) => setAutoApproveLimit(parseFloat(e.target.value) || 0)}
-                className="w-full h-9 pl-7 pr-3 text-sm tabular-nums text-[var(--color-ink)] bg-transparent border border-[var(--color-line)] rounded-[var(--radius-control)] focus:outline-none focus:ring-2 focus:ring-[var(--color-ink)] focus:ring-offset-1"
+                className="w-full h-11 pl-7 pr-3 text-sm tabular-nums text-[var(--color-ink)] bg-transparent border border-[var(--color-line)] rounded-[var(--radius-control)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)]"
                 required
               />
             </div>
@@ -150,7 +143,7 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
             </p>
           </div>
 
-          <div>
+          <div className="pt-2 border-t border-[var(--color-line-soft)]">
             <label htmlFor="hardLimit" className="block text-[13px] font-medium text-[var(--color-ink)] mb-1">
               Blocked above
             </label>
@@ -165,7 +158,7 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
                 step={1}
                 value={hardLimit}
                 onChange={(e) => setHardLimit(parseFloat(e.target.value) || 0)}
-                className="w-full h-9 pl-7 pr-3 text-sm tabular-nums text-[var(--color-ink)] bg-transparent border border-[var(--color-line)] rounded-[var(--radius-control)] focus:outline-none focus:ring-2 focus:ring-[var(--color-ink)] focus:ring-offset-1"
+                className="w-full h-11 pl-7 pr-3 text-sm tabular-nums text-[var(--color-ink)] bg-transparent border border-[var(--color-line)] rounded-[var(--radius-control)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)]"
                 required
               />
             </div>
@@ -174,9 +167,9 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
             </p>
           </div>
 
-          <div>
+          <div className="pt-2 border-t border-[var(--color-line-soft)]">
             <label htmlFor="dailyCap" className="block text-[13px] font-medium text-[var(--color-ink)] mb-1">
-              Daily spending cap
+              Daily cap
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-ink-muted)] text-sm">
@@ -189,7 +182,7 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
                 step={1}
                 value={dailyCap}
                 onChange={(e) => setDailyCap(parseFloat(e.target.value) || 1)}
-                className="w-full h-9 pl-7 pr-3 text-sm tabular-nums text-[var(--color-ink)] bg-transparent border border-[var(--color-line)] rounded-[var(--radius-control)] focus:outline-none focus:ring-2 focus:ring-[var(--color-ink)] focus:ring-offset-1"
+                className="w-full h-11 pl-7 pr-3 text-sm tabular-nums text-[var(--color-ink)] bg-transparent border border-[var(--color-line)] rounded-[var(--radius-control)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)]"
                 required
               />
             </div>
@@ -199,8 +192,8 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
           </div>
         </div>
 
-        {/* Never allow (blocked action types) with three checkboxes */}
-        <div className="pt-2 border-t border-[var(--color-line)]">
+        {/* Never allow (blocked action types) */}
+        <div className="pt-2.5 border-t border-[var(--color-line-soft)]">
           <span className="block text-[13px] font-medium text-[var(--color-ink)] mb-1">
             Never allow
           </span>
@@ -216,7 +209,7 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
                     type="checkbox"
                     checked={isChecked}
                     onChange={() => toggleBlockedType(type)}
-                    className="w-4 h-4 rounded border-[var(--color-line-strong)] text-[var(--color-ink)] focus:ring-[var(--color-ink)] focus:ring-offset-1"
+                    className="w-4 h-4 rounded border-[var(--color-line-strong)] text-[var(--color-brand)] focus:ring-[var(--color-brand)]"
                   />
                   <span>{label}</span>
                 </label>
@@ -226,7 +219,7 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
         </div>
 
         {/* Allowed payout recipients */}
-        <div className="pt-2 border-t border-[var(--color-line)]">
+        <div className="pt-2.5 border-t border-[var(--color-line-soft)]">
           <label htmlFor="allowed-recipient-input" className="block text-[13px] font-medium text-[var(--color-ink)] mb-1">
             Allowed payout recipients
           </label>
@@ -237,7 +230,7 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
               value={newEmail}
               onChange={(e) => setNewEmail(e.target.value)}
               placeholder="e.g. sb-sub@example.com"
-              className="flex-1 h-9 px-3 text-sm text-[var(--color-ink)] placeholder-[var(--color-ink-muted)] bg-transparent border border-[var(--color-line)] rounded-[var(--radius-control)] focus:outline-none focus:ring-2 focus:ring-[var(--color-ink)] focus:ring-offset-1"
+              className="flex-1 h-11 px-3 text-sm text-[var(--color-ink)] placeholder-[var(--color-ink-muted)] bg-transparent border border-[var(--color-line)] rounded-[var(--radius-control)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)]"
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -248,7 +241,7 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
             <button
               type="button"
               onClick={() => handleAddEmail()}
-              className="h-9 px-3 rounded-[var(--radius-control)] border border-[var(--color-line)] hover:bg-[var(--color-paper)] text-xs font-medium text-[var(--color-ink)] transition-btn cursor-pointer"
+              className="h-11 px-3.5 rounded-[var(--radius-control)] border border-[var(--color-line)] hover:bg-[var(--color-page)] text-xs font-medium text-[var(--color-ink)] transition-btn cursor-pointer"
             >
               Add
             </button>
@@ -258,7 +251,7 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
             <p className="text-xs text-[var(--color-stop)] mb-2">{emailError}</p>
           )}
 
-          {/* Email chips with remove control */}
+          {/* Email chips */}
           <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pt-1">
             {allowedRecipients.length === 0 ? (
               <span className="text-xs text-[var(--color-ink-muted)]">
@@ -268,9 +261,9 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
               allowedRecipients.map((email) => (
                 <span
                   key={email}
-                  className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[var(--radius-control)] bg-[var(--color-paper)] border border-[var(--color-line)] text-xs text-[var(--color-ink)]"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[var(--color-page)] border border-[var(--color-line)] text-xs text-[var(--color-ink)]"
                 >
-                  <span className="truncate max-w-[200px]">{email}</span>
+                  <span className="truncate max-w-[190px]">{email}</span>
                   <button
                     type="button"
                     onClick={() => handleRemoveEmail(email)}
@@ -291,11 +284,11 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
           </div>
         )}
 
-        <div className="pt-3 border-t border-[var(--color-line)] flex justify-end">
+        <div className="pt-3 border-t border-[var(--color-line-soft)] flex justify-end">
           <button
             type="submit"
             disabled={isSaving}
-            className="h-9 px-4 rounded-[var(--radius-control)] bg-[var(--color-ink)] hover:bg-[#222733] text-[var(--color-surface)] text-sm font-medium transition-btn disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--color-ink)] focus:ring-offset-2 min-w-[100px]"
+            className="h-10 px-5 rounded-[var(--radius-control)] bg-[var(--color-brand)] hover:bg-[var(--color-brand-hover)] text-white text-sm font-medium transition-btn disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)] min-w-[110px]"
           >
             {isSaving ? "Saving..." : "Save rules"}
           </button>

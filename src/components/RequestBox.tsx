@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import type { ParseResult } from "@/lib/ai/parse";
 import type { StoredAction } from "@/lib/types";
-import { LimitRuler } from "./LimitRuler";
 import { getDisplayStatus } from "./statusHelper";
 
 interface RequestResultPayload {
@@ -10,18 +9,39 @@ interface RequestResultPayload {
   error?: string;
 }
 
+export interface ActionResultSummary {
+  amount: number;
+  status: string;
+}
+
 interface RequestBoxProps {
   onRequestComplete: () => Promise<void>;
+  onResult?: (result: ActionResultSummary | null) => void;
 }
 
 const EXAMPLE_CHIPS = [
-  "Pay Sam (sb-sub@example.com) $120 for the illustration",
-  "Pay Sam (sb-sub@example.com) $450 for the full brand package",
-  "Invoice Acme Corp (billing@acme.com) $850 for the logo design",
-  "Pay hacker@evil.com $50",
+  {
+    short: "Pay Sam $120",
+    full: "Pay Sam (sb-sub@example.com) $120 for the illustration",
+  },
+  {
+    short: "Pay Sam $450",
+    full: "Pay Sam (sb-sub@example.com) $450 for the full brand package",
+  },
+  {
+    short: "Invoice Acme $850",
+    full: "Invoice Acme Corp (billing@acme.com) $850 for the logo design",
+  },
+  {
+    short: "Pay hacker $50",
+    full: "Pay hacker@evil.com $50",
+  },
 ];
 
-export const RequestBox: React.FC<RequestBoxProps> = ({ onRequestComplete }) => {
+export const RequestBox: React.FC<RequestBoxProps> = ({
+  onRequestComplete,
+  onResult,
+}) => {
   const [text, setText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [lastResult, setLastResult] = useState<RequestResultPayload | null>(null);
@@ -50,11 +70,28 @@ export const RequestBox: React.FC<RequestBoxProps> = ({ onRequestComplete }) => 
         setRateLimitMessage(
           "Slow down! You've exceeded the rate limit. Please wait a minute before sending another request."
         );
+        if (onResult) {
+          onResult(null);
+        }
         return;
       }
 
       const data: RequestResultPayload = await res.json();
       setLastResult(data);
+
+      if (data.parse.kind === "action" && data.action) {
+        if (onResult) {
+          onResult({
+            amount: data.action.amount,
+            status: data.action.status,
+          });
+        }
+      } else {
+        if (onResult) {
+          onResult(null);
+        }
+      }
+
       await onRequestComplete();
     } catch (err) {
       setLastResult({
@@ -64,6 +101,9 @@ export const RequestBox: React.FC<RequestBoxProps> = ({ onRequestComplete }) => 
           retryable: true,
         },
       });
+      if (onResult) {
+        onResult(null);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -75,9 +115,9 @@ export const RequestBox: React.FC<RequestBoxProps> = ({ onRequestComplete }) => 
         <div
           role="alert"
           aria-live="polite"
-          className="fade-in-verdict mt-4 pt-3 border-t border-[var(--color-line)] flex items-start gap-2.5 text-sm text-[var(--color-wait)]"
+          className="fade-in-verdict mt-3 pt-3 border-t border-[var(--color-line-soft)] flex items-start gap-2.5 text-sm"
         >
-          <span className="w-2 h-2 rounded-full bg-[var(--color-wait)] shrink-0 mt-1.5" />
+          <span className="w-2 h-2 rounded-full bg-[var(--color-wait-solid)] shrink-0 mt-1.5" />
           <div>
             <span className="font-medium text-[var(--color-ink)]">Slow down. </span>
             <span className="text-[var(--color-ink-muted)]">{rateLimitMessage}</span>
@@ -95,7 +135,6 @@ export const RequestBox: React.FC<RequestBoxProps> = ({ onRequestComplete }) => 
     if (parse.kind === "action" && action) {
       const display = getDisplayStatus(action.status, action.paypalStatus);
 
-      // Sentence summary based on action status & limits
       let summaryText = action.reason;
       if (action.status === "completed" || action.status === "approved") {
         summaryText = `Sent. ${action.reason}`;
@@ -111,34 +150,25 @@ export const RequestBox: React.FC<RequestBoxProps> = ({ onRequestComplete }) => 
         <div
           role="status"
           aria-live="polite"
-          className="fade-in-verdict mt-4 pt-3.5 border-t border-[var(--color-line)] flex flex-col gap-3"
+          className="fade-in-verdict mt-3 pt-3 border-t border-[var(--color-line-soft)] flex items-center justify-between gap-3 text-sm"
         >
-          {/* State dot + one plain sentence + rule name */}
-          <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 text-sm">
-            <div className="flex items-baseline gap-2">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${display.dotClass}`} />
-              <span className="text-[var(--color-ink)] font-normal">{summaryText}</span>
-            </div>
-            {action.ruleFired && (
-              <span className="text-xs text-[var(--color-ink-muted)] sm:shrink-0 font-normal">
-                {action.ruleFired}
-              </span>
-            )}
+          {/* State dot (solid color) + sentence in ink */}
+          <div className="flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full shrink-0 ${display.solidDotClass}`} />
+            <span className="text-[var(--color-ink)] font-normal">{summaryText}</span>
           </div>
 
-          {/* Action result includes LimitRuler with marker at request amount */}
-          <div className="mt-1 pt-2 border-t border-[var(--color-line)]">
-            <LimitRuler
-              autoApproveLimit={200}
-              hardLimit={5000}
-              marker={action.amount}
-            />
-          </div>
+          {/* Rule name as a small neutral chip at right */}
+          {action.ruleFired && (
+            <span className="text-xs text-[var(--color-ink-muted)] bg-[var(--color-page)] border border-[var(--color-line)] px-2.5 py-0.5 rounded-full shrink-0 font-normal">
+              {action.ruleFired}
+            </span>
+          )}
         </div>
       );
     }
 
-    // Clarify / unsupported / error results are neutral grey verdict rows
+    // Clarify / unsupported / error results use a neutral dot
     let neutralMessage = "";
     if (parse.kind === "clarify") {
       neutralMessage = parse.question;
@@ -152,7 +182,7 @@ export const RequestBox: React.FC<RequestBoxProps> = ({ onRequestComplete }) => 
       <div
         role="status"
         aria-live="polite"
-        className="fade-in-verdict mt-4 pt-3 border-t border-[var(--color-line)] flex items-start gap-2.5 text-sm"
+        className="fade-in-verdict mt-3 pt-3 border-t border-[var(--color-line-soft)] flex items-start gap-2.5 text-sm"
       >
         <span className="w-2 h-2 rounded-full bg-[var(--color-ink-muted)] shrink-0 mt-1.5" />
         <span className="text-[var(--color-ink-muted)]">{neutralMessage}</span>
@@ -161,9 +191,9 @@ export const RequestBox: React.FC<RequestBoxProps> = ({ onRequestComplete }) => 
   };
 
   return (
-    <section className="bg-[var(--color-surface)] border border-[var(--color-line)] rounded-[var(--radius-panel)] p-5">
+    <section className="bg-[var(--color-surface)] border border-[var(--color-line)] rounded-[var(--radius-panel)] p-4">
       <form onSubmit={handleSubmit} className="space-y-3">
-        {/* Large, single-line-feeling composer: 16px text, 48px high, ink Send button */}
+        {/* Large 17px input, 48px high, no inner box border, brand Send button */}
         <div className="relative flex items-center">
           <input
             id="ai-request-input"
@@ -171,7 +201,7 @@ export const RequestBox: React.FC<RequestBoxProps> = ({ onRequestComplete }) => 
             value={text}
             onChange={(e) => setText(e.target.value.slice(0, 500))}
             placeholder="Pay Sam $120 for the illustration"
-            className="w-full h-12 text-base text-[var(--color-ink)] placeholder-[var(--color-ink-muted)] bg-transparent border border-[var(--color-line)] rounded-[var(--radius-control)] pl-3.5 pr-24 focus:outline-none focus:ring-2 focus:ring-[var(--color-ink)] focus:ring-offset-2 transition-all"
+            className="w-full h-12 text-[17px] text-[var(--color-ink)] placeholder-[var(--color-ink-muted)] bg-transparent pl-1 pr-28 focus:outline-none transition-all"
             disabled={isLoading}
             aria-label="Payment instruction"
           />
@@ -179,26 +209,32 @@ export const RequestBox: React.FC<RequestBoxProps> = ({ onRequestComplete }) => 
           <button
             type="submit"
             disabled={isLoading || !text.trim()}
-            className="absolute right-1.5 h-9 px-4 rounded-[var(--radius-control)] bg-[var(--color-ink)] hover:bg-[#222733] text-[var(--color-surface)] text-sm font-medium transition-btn disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--color-ink)] focus:ring-offset-1 inline-flex items-center justify-center min-w-[64px]"
+            className="absolute right-0 h-10 px-6 rounded-[var(--radius-control)] bg-[var(--color-brand)] hover:bg-[var(--color-brand-hover)] text-white text-sm font-medium transition-btn disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)] focus:ring-offset-2 inline-flex items-center justify-center min-w-[76px]"
           >
             {isLoading ? "Sending..." : "Send"}
           </button>
         </div>
 
-        {/* Example chips: quiet text-style pills with a hairline border */}
-        <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          {EXAMPLE_CHIPS.map((chip, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => setText(chip)}
-              disabled={isLoading}
-              className="text-xs text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] bg-transparent hover:bg-[var(--color-paper)] border border-[var(--color-line)] rounded-full px-2.5 py-1 transition-btn cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed text-left max-w-full truncate"
-              title={chip}
-            >
-              {chip}
-            </button>
-          ))}
+        {/* Quiet character counter & hairline pill chips */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[var(--color-line-soft)]">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {EXAMPLE_CHIPS.map((chip, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => setText(chip.full)}
+                disabled={isLoading}
+                className="text-xs text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] bg-transparent hover:bg-[var(--color-page)] border border-[var(--color-line)] rounded-full px-3 py-1 transition-btn cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                title={chip.full}
+              >
+                {chip.short}
+              </button>
+            ))}
+          </div>
+
+          <span className="text-[11px] tabular-nums text-[var(--color-ink-muted)] ml-auto">
+            {text.length}/500
+          </span>
         </div>
       </form>
 

@@ -7,19 +7,21 @@ export interface DisplayStatus {
   label: string;
   tone: DisplayTone;
   dotClass: string;
+  solidDotClass: string;
   textClass: string;
+  tintBgClass: string;
 }
 
 /**
- * Pure display status helper mapping stored status & paypalStatus
- * approved/completed + paypal SUCCESS/PAID/COMPLETED -> "Settled" (ok)
- * completed with PENDING/SENT -> "Sent, settling" (live)
- * executing -> "Sending" (live)
- * pending_approval -> "Waiting for you" (wait)
- * blocked -> "Blocked" (stop)
- * rejected -> "Rejected" (ink-muted)
- * failed -> "Failed" (stop)
- * approved (not yet executed) -> "Approved" (ok)
+ * Pure display status helper mapping stored status & paypalStatus (Direction D):
+ * - completed with paypal SUCCESS/PAID/COMPLETED -> "Settled" (ok)
+ * - completed with PENDING/SENT/other non-terminal -> "Settling" (live)
+ * - executing -> "Sending" (live)
+ * - pending_approval -> "Waiting" (wait)
+ * - blocked -> "Blocked" (stop)
+ * - rejected -> "Rejected" (neutral grey tint #EEF1EF / ink-muted)
+ * - failed -> "Failed" (stop)
+ * - approved not yet executed -> "Approved" (ok)
  */
 export function getDisplayStatus(
   status: ActionStatus | string,
@@ -36,19 +38,23 @@ export function getDisplayStatus(
       label: "Settled",
       tone: "ok",
       dotClass: "bg-[var(--color-ok)]",
+      solidDotClass: "bg-[var(--color-ok-solid)]",
       textClass: "text-[var(--color-ok)]",
+      tintBgClass: "bg-[var(--color-ok-tint)]",
     };
   }
 
   if (
     normStatus === "completed" &&
-    (normPaypal === "PENDING" || normPaypal === "SENT" || normPaypal === "")
+    (normPaypal === "PENDING" || normPaypal === "SENT" || normPaypal === "" || normPaypal !== "FAILED")
   ) {
     return {
-      label: "Sent, settling",
+      label: "Settling",
       tone: "live",
       dotClass: "bg-[var(--color-live)]",
+      solidDotClass: "bg-[var(--color-live-solid)]",
       textClass: "text-[var(--color-live)]",
+      tintBgClass: "bg-[var(--color-live-tint)]",
     };
   }
 
@@ -57,16 +63,20 @@ export function getDisplayStatus(
       label: "Sending",
       tone: "live",
       dotClass: "bg-[var(--color-live)]",
+      solidDotClass: "bg-[var(--color-live-solid)]",
       textClass: "text-[var(--color-live)]",
+      tintBgClass: "bg-[var(--color-live-tint)]",
     };
   }
 
   if (normStatus === "pending_approval") {
     return {
-      label: "Waiting for you",
+      label: "Waiting",
       tone: "wait",
       dotClass: "bg-[var(--color-wait)]",
+      solidDotClass: "bg-[var(--color-wait-solid)]",
       textClass: "text-[var(--color-wait)]",
+      tintBgClass: "bg-[var(--color-wait-tint)]",
     };
   }
 
@@ -75,7 +85,9 @@ export function getDisplayStatus(
       label: "Blocked",
       tone: "stop",
       dotClass: "bg-[var(--color-stop)]",
+      solidDotClass: "bg-[var(--color-stop-solid)]",
       textClass: "text-[var(--color-stop)]",
+      tintBgClass: "bg-[var(--color-stop-tint)]",
     };
   }
 
@@ -84,7 +96,9 @@ export function getDisplayStatus(
       label: "Rejected",
       tone: "ink-muted",
       dotClass: "bg-[var(--color-ink-muted)]",
+      solidDotClass: "bg-[var(--color-ink-muted)]",
       textClass: "text-[var(--color-ink-muted)]",
+      tintBgClass: "bg-[#EEF1EF]",
     };
   }
 
@@ -93,7 +107,9 @@ export function getDisplayStatus(
       label: "Failed",
       tone: "stop",
       dotClass: "bg-[var(--color-stop)]",
+      solidDotClass: "bg-[var(--color-stop-solid)]",
       textClass: "text-[var(--color-stop)]",
+      tintBgClass: "bg-[var(--color-stop-tint)]",
     };
   }
 
@@ -102,7 +118,9 @@ export function getDisplayStatus(
       label: "Approved",
       tone: "ok",
       dotClass: "bg-[var(--color-ok)]",
+      solidDotClass: "bg-[var(--color-ok-solid)]",
       textClass: "text-[var(--color-ok)]",
+      tintBgClass: "bg-[var(--color-ok-tint)]",
     };
   }
 
@@ -110,7 +128,9 @@ export function getDisplayStatus(
     label: normStatus.replace("_", " "),
     tone: "ink-muted",
     dotClass: "bg-[var(--color-ink-muted)]",
+    solidDotClass: "bg-[var(--color-ink-muted)]",
     textClass: "text-[var(--color-ink-muted)]",
+    tintBgClass: "bg-[#EEF1EF]",
   };
 }
 
@@ -125,8 +145,9 @@ export function StatusBadge({
 }) {
   const display = getDisplayStatus(status, paypalStatus);
   return (
-    <span className={`inline-flex items-center gap-1.5 text-[13px] font-medium ${display.textClass} ${className}`}>
-      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${display.dotClass}`} aria-hidden="true" />
+    <span
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${display.tintBgClass} ${display.textClass} ${className}`}
+    >
       <span>{display.label}</span>
     </span>
   );
