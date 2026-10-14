@@ -257,4 +257,33 @@ describe("Database layer (in-memory SQLite)", () => {
       expect(spent).toBe(175);
     });
   });
+
+  describe("Directory auto-creation", () => {
+    it("recursively creates the parent directory of customPath when it does not exist", async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const os = await import("os");
+
+      const tempDir = path.join(os.tmpdir(), "leash-test-db-" + Date.now(), "nested", "sub");
+      const testDbPath = path.join(tempDir, "test.db");
+
+      expect(fs.existsSync(tempDir)).toBe(false);
+
+      try {
+        resetDb();
+        const diskDb = getDb(testDbPath);
+        expect(fs.existsSync(tempDir)).toBe(true);
+        expect(fs.existsSync(testDbPath)).toBe(true);
+
+        const rules = getRules(diskDb);
+        expect(rules.autoApproveLimit).toBe(200);
+      } finally {
+        resetDb();
+        const baseDir = path.join(os.tmpdir(), path.basename(path.dirname(path.dirname(tempDir))));
+        if (fs.existsSync(baseDir)) {
+          fs.rmSync(baseDir, { recursive: true, force: true });
+        }
+      }
+    });
+  });
 });
