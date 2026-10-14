@@ -28,11 +28,13 @@ const darkTheme = themeQuartz.withParams({
 
 interface LedgerProps {
   actions: StoredAction[];
+  onRefresh?: () => Promise<void> | void;
 }
 
-export const Ledger: React.FC<LedgerProps> = ({ actions }) => {
+export const Ledger: React.FC<LedgerProps> = ({ actions, onRefresh }) => {
   const [quickFilterText, setQuickFilterText] = useState("");
   const [selectedAction, setSelectedAction] = useState<StoredAction | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Close drawer on Escape key
   useEffect(() => {
@@ -288,9 +290,49 @@ export const Ledger: React.FC<LedgerProps> = ({ actions }) => {
 
             {/* PayPal Gateway Data */}
             <div>
-              <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-                PayPal Gateway
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+                  PayPal Gateway
+                </span>
+                {selectedAction.paypalId && selectedAction.status === "completed" && (
+                  <button
+                    type="button"
+                    disabled={isRefreshing}
+                    onClick={async () => {
+                      setIsRefreshing(true);
+                      try {
+                        const res = await fetch(`/api/actions/${selectedAction.id}/refresh`, {
+                          method: "POST",
+                        });
+                        if (res.ok) {
+                          const updated = (await res.json()) as StoredAction;
+                          setSelectedAction(updated);
+                          if (onRefresh) {
+                            await onRefresh();
+                          }
+                        }
+                      } catch (err) {
+                        console.error("Failed to refresh action status:", err);
+                      } finally {
+                        setIsRefreshing(false);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700 transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    {isRefreshing ? (
+                      <>
+                        <svg className="w-2.5 h-2.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Refreshing...
+                      </>
+                    ) : (
+                      "Refresh status"
+                    )}
+                  </button>
+                )}
+              </div>
               <div className="mt-1 p-3 rounded-xl bg-zinc-900/60 border border-zinc-800/60 space-y-2 font-mono">
                 <div className="flex items-center justify-between">
                   <span className="text-zinc-400 font-sans">PayPal ID:</span>

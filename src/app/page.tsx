@@ -46,7 +46,7 @@ export default function Home() {
             <div className="lg:col-span-8 flex flex-col gap-6 w-full">
               <RequestBox onRequestComplete={refresh} />
               <ApprovalInbox pendingActions={pendingActions} onActionHandled={refresh} />
-              <Ledger actions={actions} />
+              <Ledger actions={actions} onRefresh={refresh} />
             </div>
 
             {/* Right Column (4 cols): RulesPanel */}
