@@ -5,20 +5,22 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
     "lint": "eslint",
+    "test": "vitest run",
     "test:auth": "tsx scripts/test-auth.ts",
     "test:invoice": "tsx scripts/test-invoice.ts",
     "test:payout": "tsx scripts/test-payout.ts",
     "test:refund": "tsx scripts/test-refund.ts"
   },
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -27,6 +29,8 @@
     "eslint-config-next": "16.4.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4"
   }
 }
