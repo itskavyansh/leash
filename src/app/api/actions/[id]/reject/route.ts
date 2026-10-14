@@ -4,9 +4,6 @@ import { rejectAction } from "@/lib/executor";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { getClientIp } from "@/lib/clientIp";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 export async function POST(
   request: Request,
   ctx: { params: Promise<{ id: string }> }

@@ -4,9 +4,6 @@ import { processRequest } from "@/lib/orchestrator";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { getClientIp } from "@/lib/clientIp";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 const RequestBodySchema = z.object({
   text: z.string().trim().min(1, "Text must not be empty").max(500, "Text must not exceed 500 characters"),
 });

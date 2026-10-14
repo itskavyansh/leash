@@ -3,9 +3,6 @@ import { z } from "zod";
 import { getRules, saveRules } from "@/lib/db";
 import type { ActionType } from "@/lib/types";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 const validActionTypes: [ActionType, ...ActionType[]] = [
   "send_invoice",
   "send_payout",
