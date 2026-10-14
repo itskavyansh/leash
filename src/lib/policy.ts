@@ -16,12 +16,20 @@ function formatUSD(amount: number): string {
  * 6. amount > autoApproveLimit -> needs_approval, "auto_limit"
  * 7. otherwise -> approve, "within_limits"
  */
-export function evaluate(
+/**
+ * Evaluates the HARD checks only:
+ * 1. Invalid amount: non-positive or non-finite -> blocked, "invalid_amount"
+ * 2. action.type in blockedActionTypes -> blocked, "blocked_action_type"
+ * 3. send_payout recipient not in allowedRecipients (case-insensitive) -> blocked, "recipient_not_allowed"
+ * 4. amount > hardLimit -> blocked, "hard_limit"
+ *
+ * Returns the first blocking PolicyResult, or null if all hard checks pass.
+ */
+export function evaluateHardChecks(
   action: ProposedAction,
-  rules: Rules,
-  spentToday: number
-): PolicyResult {
-  // Reject non-positive or non-finite amounts first
+  rules: Rules
+): PolicyResult | null {
+  // 1. Reject non-positive or non-finite amounts first
   if (!Number.isFinite(action.amount) || action.amount <= 0) {
     return {
       decision: "blocked",
@@ -30,7 +38,7 @@ export function evaluate(
     };
   }
 
-  // a. action.type in blockedActionTypes
+  // 2. action.type in blockedActionTypes
   if (rules.blockedActionTypes.includes(action.type)) {
     return {
       decision: "blocked",
@@ -39,7 +47,7 @@ export function evaluate(
     };
   }
 
-  // b. send_payout recipient not in allowedRecipients (case-insensitive)
+  // 3. send_payout recipient not in allowedRecipients (case-insensitive)
   if (action.type === "send_payout") {
     const targetRecipient = action.recipient.trim().toLowerCase();
     const isAllowed = rules.allowedRecipients.some(
@@ -54,13 +62,35 @@ export function evaluate(
     }
   }
 
-  // c. amount > hardLimit
+  // 4. amount > hardLimit
   if (action.amount > rules.hardLimit) {
     return {
       decision: "blocked",
       ruleFired: "hard_limit",
       reason: `${formatUSD(action.amount)} exceeds your ${formatUSD(rules.hardLimit)} hard limit.`,
     };
+  }
+
+  return null;
+}
+
+/**
+ * Pure evaluation function for policy rules.
+ *
+ * Evaluation order:
+ * 1. Hard checks (invalid amount, blocked type, allowlist, hard limit)
+ * 2. (if not send_invoice) spentToday + amount > dailyCap -> needs_approval, "daily_cap"
+ * 3. amount > autoApproveLimit -> needs_approval, "auto_limit"
+ * 4. otherwise -> approve, "within_limits"
+ */
+export function evaluate(
+  action: ProposedAction,
+  rules: Rules,
+  spentToday: number
+): PolicyResult {
+  const hardCheckResult = evaluateHardChecks(action, rules);
+  if (hardCheckResult) {
+    return hardCheckResult;
   }
 
   // d. spentToday + amount > dailyCap (invoices do not spend money, so skip for send_invoice)

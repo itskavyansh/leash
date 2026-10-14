@@ -2,26 +2,10 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
-import { ActionStatus, ActionType, Decision, Rules } from "./types";
+import { ActionStatus, ActionType, Decision, Rules, StoredAction } from "./types";
 
-export interface ActionRecord {
-  id: string;
-  createdAt: string;
-  type: ActionType;
-  amount: number;
-  currency: string;
-  recipient: string;
-  description: string;
-  reference: string | null;
-  status: ActionStatus;
-  decision: Decision;
-  reason: string;
-  ruleFired: string;
-  paypalId: string | null;
-  paypalStatus: string | null;
-  errorMessage: string | null;
-  requestText: string | null;
-}
+export type ActionRecord = StoredAction;
+export type { StoredAction };
 
 export interface InsertActionInput {
   id?: string;
@@ -255,6 +239,17 @@ export function updateAction(
 export function getAction(id: string, db: Database.Database = getDb()): ActionRecord | null {
   const row = db.prepare("SELECT * FROM actions WHERE id = ?").get(id) as ActionRecord | undefined;
   return row ?? null;
+}
+
+/**
+ * Atomically transitions an action from 'approved' to 'executing'.
+ * Returns true if the claim was successful, false if the action was not in 'approved' status.
+ */
+export function claimForExecution(id: string, db: Database.Database = getDb()): boolean {
+  const info = db
+    .prepare("UPDATE actions SET status = 'executing' WHERE id = ? AND status = 'approved'")
+    .run(id);
+  return info.changes > 0;
 }
 
 export function listActions(db: Database.Database = getDb()): ActionRecord[] {

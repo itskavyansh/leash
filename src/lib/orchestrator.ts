@@ -66,3 +66,27 @@ export async function handleRequest(
     action: storedAction,
   };
 }
+
+/**
+ * Parses natural language request, evaluates policy, stores the action, and if the action
+ * was approved, immediately executes it via executeAction and returns the final row.
+ */
+export async function processRequest(
+  text: string,
+  provider?: LlmProvider,
+  deps?: import("./executor").ExecutorDeps,
+  delayFn?: DelayFn
+): Promise<HandleRequestResult> {
+  const result = await handleRequest(text, provider, delayFn);
+
+  if (result.action && result.action.status === "approved") {
+    const { executeAction } = await import("./executor");
+    const executed = await executeAction(result.action.id, deps);
+    return {
+      parse: result.parse,
+      action: executed,
+    };
+  }
+
+  return result;
+}

@@ -11,7 +11,8 @@
     "test:invoice": "tsx scripts/test-invoice.ts",
     "test:payout": "tsx scripts/test-payout.ts",
     "test:refund": "tsx scripts/test-refund.ts",
-    "try:ai": "tsx scripts/try-ai.ts"
+    "try:ai": "tsx scripts/try-ai.ts",
+    "try:execute": "tsx scripts/try-execute.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",

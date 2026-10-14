@@ -20,6 +20,25 @@ export type ActionStatus =
   | "completed"
   | "failed";
 
+export interface StoredAction {
+  id: string;
+  createdAt: string;
+  type: ActionType;
+  amount: number;
+  currency: string;
+  recipient: string;
+  description: string;
+  reference: string | null;
+  status: ActionStatus;
+  decision: Decision;
+  reason: string;
+  ruleFired: string;
+  paypalId: string | null;
+  paypalStatus: string | null;
+  errorMessage: string | null;
+  requestText: string | null;
+}
+
 export interface PolicyResult {
   decision: Decision;
   reason: string;
