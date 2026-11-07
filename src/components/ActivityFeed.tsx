@@ -10,7 +10,7 @@ import {
   FilterChangedEvent,
   GridReadyEvent,
 } from "ag-grid-community";
-import type { StoredAction } from "@/lib/types";
+import type { StoredAction, Rules } from "@/lib/types";
 import { StatusBadge } from "./statusHelper";
 import { FilterSpec, LedgerQueryResult } from "@/lib/ai/parseLedgerQuery";
 import {
@@ -18,6 +18,8 @@ import {
   getFilterChips,
   FilterChip,
 } from "@/lib/ledgerFilterMapping";
+import { compareDatesInLocalTimezone } from "@/lib/dateComparator";
+import { buildBriefFacts, buildTemplateBrief } from "@/lib/briefFacts";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -84,6 +86,29 @@ function formatCompactTime(isoString: string): string {
   }
 }
 
+/**
+ * Calculates money-moving total and excluded count from a list of rows.
+ * Only statuses 'approved', 'executing', 'completed' move money.
+ * Excludes pending_approval, blocked, rejected, failed.
+ */
+function calculateFilteredMoney(nodes: StoredAction[]): { total: number; excludedCount: number } {
+  let total = 0;
+  let excludedCount = 0;
+
+  for (const item of nodes) {
+    if (
+      item.type !== "send_invoice" &&
+      (item.status === "approved" || item.status === "executing" || item.status === "completed")
+    ) {
+      total += Number(item.amount) || 0;
+    } else {
+      excludedCount += 1;
+    }
+  }
+
+  return { total, excludedCount };
+}
+
 export const ActivityFeed: React.FC<ActivityFeedProps> = ({
   actions,
   pendingActions,
@@ -102,10 +127,13 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
   const [askError, setAskError] = useState<string | null>(null);
   const [activeSpec, setActiveSpec] = useState<FilterSpec | null>(null);
 
+  // Approval Brief state: actionId -> text
+  const [briefs, setBriefs] = useState<Record<string, string>>({});
+
   // AG Grid ref & visible filtered totals
   const gridApiRef = useRef<GridApi<StoredAction> | null>(null);
-  const [filteredTotal, setFilteredTotal] = useState<number>(() =>
-    actions.reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+  const [filteredMoney, setFilteredMoney] = useState<{ total: number; excludedCount: number }>(() =>
+    calculateFilteredMoney(actions)
   );
 
   // Close drawer on Escape
@@ -118,6 +146,58 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  // Fetch AI briefs for pending actions
+  useEffect(() => {
+    if (pendingActions.length === 0) return;
+
+    // Up to 10 briefs per page load
+    const pendingToFetch = pendingActions.slice(0, 10);
+    const mockRules: Rules = {
+      autoApproveLimit: 200,
+      hardLimit: 5000,
+      dailyCap,
+      allowedRecipients: [],
+      blockedActionTypes: [],
+    };
+
+    // First populate deterministic templates instantly for any new pending items
+    setBriefs((prev) => {
+      const next = { ...prev };
+      for (const action of pendingToFetch) {
+        if (!next[action.id]) {
+          const facts = buildBriefFacts(action, actions, spentToday, mockRules);
+          next[action.id] = buildTemplateBrief(facts);
+        }
+      }
+      return next;
+    });
+
+    // Then asynchronously swap to AI worded brief as it arrives
+    let isCancelled = false;
+    for (const action of pendingToFetch) {
+      fetch(`/api/actions/${action.id}/brief`)
+        .then((res) => {
+          if (!res.ok) return null;
+          return res.json();
+        })
+        .then((data: { text?: string } | null) => {
+          if (!isCancelled && data?.text) {
+            setBriefs((prev) => ({
+              ...prev,
+              [action.id]: data.text!,
+            }));
+          }
+        })
+        .catch(() => {
+          // Keep template text on fetch error
+        });
+    }
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [pendingActions, actions, spentToday, dailyCap]);
 
   const handleApprove = async (id: string) => {
     setLoadingIds((prev) => ({ ...prev, [id]: "approve" }));
@@ -171,13 +251,13 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
 
   // Recalculate filtered total when filters or rows change
   const updateFilteredTotal = useCallback((api: GridApi<StoredAction>) => {
-    let total = 0;
+    const visibleActions: StoredAction[] = [];
     api.forEachNodeAfterFilter((node) => {
-      if (node.data && typeof node.data.amount === "number") {
-        total += node.data.amount;
+      if (node.data && !(node.data as unknown as { isPinnedTotal?: boolean }).isPinnedTotal) {
+        visibleActions.push(node.data);
       }
     });
-    setFilteredTotal(total);
+    setFilteredMoney(calculateFilteredMoney(visibleActions));
   }, []);
 
   const onGridReady = (params: GridReadyEvent<StoredAction>) => {
@@ -194,9 +274,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
     if (gridApiRef.current) {
       updateFilteredTotal(gridApiRef.current);
     } else {
-      setFilteredTotal(
-        actions.reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
-      );
+      setFilteredMoney(calculateFilteredMoney(actions));
     }
   }, [actions, updateFilteredTotal]);
 
@@ -347,6 +425,9 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
         },
         cellClass: "tabular-nums text-[13px] text-[var(--color-ink-muted)] flex items-center whitespace-nowrap",
         filter: "agDateColumnFilter",
+        filterParams: {
+          comparator: compareDatesInLocalTimezone,
+        },
         suppressHeaderMenuButton: true,
       },
       {
@@ -384,14 +465,19 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
         headerName: "Request",
         flex: 1,
         minWidth: 260,
-        cellRenderer: (params: { data?: StoredAction & { isPinnedTotal?: boolean } }) => {
+        cellRenderer: (params: { data?: StoredAction & { isPinnedTotal?: boolean; excludedCount?: number } }) => {
           if (!params.data) return null;
           if (params.data.isPinnedTotal) {
             return (
-              <div className="flex items-center h-full">
-                <span className="font-semibold text-xs tracking-wide uppercase text-[var(--color-ink-muted)]">
-                  Totals (filtered)
+              <div className="flex flex-col justify-center h-full py-1">
+                <span className="font-semibold text-xs tracking-wide uppercase text-[var(--color-ink)] leading-snug">
+                  Totals (filtered) · Sent or sending
                 </span>
+                {params.data.excludedCount && params.data.excludedCount > 0 ? (
+                  <span className="text-[11px] text-[var(--color-ink-muted)] leading-snug">
+                    {params.data.excludedCount} blocked, rejected or pending not counted
+                  </span>
+                ) : null}
               </div>
             );
           }
@@ -463,7 +549,8 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
     return [
       {
         isPinnedTotal: true,
-        amount: filteredTotal,
+        amount: filteredMoney.total,
+        excludedCount: filteredMoney.excludedCount,
         recipient: "Totals (filtered)",
         status: "" as StoredAction["status"],
         type: "send_payout" as StoredAction["type"],
@@ -477,7 +564,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
         ruleFired: "",
       },
     ];
-  }, [filteredTotal]);
+  }, [filteredMoney]);
 
   // Determine timeline steps for drawer
   const timelineSteps = useMemo(() => {
@@ -708,13 +795,14 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
               hour: "numeric",
               minute: "2-digit",
             });
+            const briefText = briefs[action.id];
 
             return (
               <div
                 key={action.id}
                 className="bg-[var(--color-wait-row-tint)] border-y border-[var(--color-wait-row-border)] px-5 py-3.5 rounded-[var(--radius-control)] flex flex-col md:flex-row md:items-center justify-between gap-4"
               >
-                {/* Left: label + recipient (15px, full) + reason (13px) */}
+                {/* Left: label + recipient (15px, full) + reason (13px) + brief line */}
                 <div className="space-y-0.5">
                   <div className="text-xs font-semibold text-[var(--color-wait)]">
                     Needs you · {dateStr}
@@ -727,6 +815,15 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
                   <div className="text-[13px] text-[var(--color-ink-muted)]">
                     {action.reason}
                   </div>
+
+                  {/* AI / Template Approval Brief line */}
+                  {briefText && (
+                    <div className="text-xs text-[var(--color-ink-muted)] pt-0.5 italic flex items-center gap-1.5">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--color-wait)] shrink-0" />
+                      <span>{briefText}</span>
+                    </div>
+                  )}
+
                   {errorMessage && (
                     <div className="text-xs text-[var(--color-stop)] font-medium pt-1">
                       {errorMessage}
