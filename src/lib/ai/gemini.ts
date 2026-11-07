@@ -1,4 +1,4 @@
-import { GoogleGenAI, FunctionCallingConfigMode, FunctionDeclaration } from "@google/genai";
+import { GoogleGenAI, FunctionCallingConfigMode, FunctionDeclaration, Content } from "@google/genai";
 import { LlmCompletionArgs, LlmCompletionResult, LlmProvider } from "./provider";
 
 export class GeminiProvider implements LlmProvider {
@@ -17,9 +17,31 @@ export class GeminiProvider implements LlmProvider {
       parametersJsonSchema: t.inputSchema,
     }));
 
+    let contents: string | Content[];
+    if (typeof args.user === "string") {
+      contents = args.user;
+    } else {
+      contents = [
+        {
+          role: "user",
+          parts: args.user.map((part) => {
+            if (typeof part === "string") {
+              return { text: part };
+            }
+            return {
+              inlineData: {
+                mimeType: part.inlineData.mimeType,
+                data: part.inlineData.data,
+              },
+            };
+          }),
+        },
+      ];
+    }
+
     const response = await this.client.models.generateContent({
       model: this.model,
-      contents: args.user,
+      contents,
       config: {
         systemInstruction: args.system,
         tools: [{ functionDeclarations }],

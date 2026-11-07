@@ -70,6 +70,43 @@ export async function handleRequest(
 }
 
 /**
+ * Evaluates an already-extracted proposed action against policy, inserts it into the database,
+ * and if approved, immediately executes it via executeAction and returns the final row.
+ */
+export async function processProposedAction(
+  action: import("./types").ProposedAction,
+  requestText?: string,
+  deps?: import("./executor").ExecutorDeps
+): Promise<ActionRecord> {
+  const rules = await getRules();
+  const spentToday = await getSpentToday();
+  const policyResult = evaluate(action, rules, spentToday);
+
+  const status = mapDecisionToStatus(policyResult.decision);
+
+  const storedAction = await insertAction({
+    type: action.type,
+    amount: action.amount,
+    currency: action.currency,
+    recipient: action.recipient,
+    description: action.description,
+    reference: action.reference ?? null,
+    status,
+    decision: policyResult.decision,
+    reason: policyResult.reason,
+    ruleFired: policyResult.ruleFired,
+    requestText: requestText ?? null,
+  });
+
+  if (storedAction.status === "approved") {
+    const { executeAction } = await import("./executor");
+    return await executeAction(storedAction.id, deps);
+  }
+
+  return storedAction;
+}
+
+/**
  * Parses natural language request, evaluates policy, stores the action, and if the action
  * was approved, immediately executes it via executeAction and returns the final row.
  */
@@ -79,16 +116,15 @@ export async function processRequest(
   deps?: import("./executor").ExecutorDeps,
   delayFn?: DelayFn
 ): Promise<HandleRequestResult> {
-  const result = await handleRequest(text, provider, delayFn);
+  const parse = await parseRequest(text, provider, delayFn);
 
-  if (result.action && result.action.status === "approved") {
-    const { executeAction } = await import("./executor");
-    const executed = await executeAction(result.action.id, deps);
-    return {
-      parse: result.parse,
-      action: executed,
-    };
+  if (parse.kind !== "action") {
+    return { parse };
   }
 
-  return result;
+  const action = await processProposedAction(parse.action, text, deps);
+  return {
+    parse,
+    action,
+  };
 }

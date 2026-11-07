@@ -6,9 +6,18 @@ export interface ToolDef {
   inputSchema: Record<string, unknown>;
 }
 
+export interface LlmPartFile {
+  inlineData: {
+    mimeType: string;
+    data: string; // base64
+  };
+}
+
+export type LlmContentItem = string | LlmPartFile;
+
 export interface LlmCompletionArgs {
   system: string;
-  user: string;
+  user: string | LlmContentItem[];
   tools: ToolDef[];
 }
 

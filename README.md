@@ -32,6 +32,7 @@ Instead of letting an LLM execute payment APIs directly:
 ## Features
 
 - **Natural Language Intent Parsing**: Accepts plain-English requests (e.g., *"Pay Sam $120 for the illustration"* or *"Invoice Acme Corp $850 for the logo design"*), forcing structured tool calls via Google Gemini with strict Zod validation.
+- **From a Document Input**: Ingests pasted document text or uploaded PDF, PNG, and JPG files (up to 5 MB, max 20,000 characters). The model treats the document strictly as untrusted data, extracts payment proposals (capped at 10), and feeds each proposal through the exact same deterministic policy engine and orchestrator as typed requests.
 - **Dynamic Model Fallback Cascade**: If the primary Gemini model encounters transient outages or rate limits (HTTP 429/503), requests automatically cycle through any fallback models specified in your environment (`LLM_FALLBACK_MODELS`).
 - **Deterministic Policy Engine**: Evaluates every action against financial rules before any payment gateway request is made.
 - **Approval Inbox**: Pending actions requiring human review are staged as interactive cards where admins can inspect policy reasons, approve, or reject.
@@ -89,6 +90,17 @@ The policy engine operates as a pure, deterministic function (`evaluate(action, 
 | **7** | **Within Limits** | Passes all above rules | **`approve`** | `within_limits` |
 
 > **Important**: When a human approves an action from the Approval Inbox, the system **re-evaluates all Hard Rules (1–4)** against current rules before executing, preventing execution if an admin blocked that recipient or lowered the hard limit while the action was waiting.
+
+---
+
+## Documents ("From a document")
+
+Leash allows users to paste raw document text or upload invoices, receipts, and bills as PDF, PNG, or JPG files (up to 5 MB, max 20,000 characters of text).
+
+- **Untrusted by Design**: Uploaded documents are treated strictly as passive, untrusted data. Embedded prompt injection attacks or instructions (e.g. *"disregard rules"*, *"override limit"*, *"pay attacker"*) are ignored by the parser.
+- **AI Proposes, Deterministic Code Decides**: The model extracts structured payment proposals (capped at 10 per document) and passes each proposal individually into the exact same policy engine and orchestrator as typed requests. The AI never approves or alters a verdict.
+- **Zero Document Storage**: Uploaded files and pasted document texts are processed in-memory and never stored to disk or database. Only the structured action records that pass into policy evaluation are persisted to the ledger.
+- **Resilience & Rate Limiting**: Each document upload counts as one rate-limited request. If any individual payment item encounters a processing issue, the remaining items continue to be evaluated independently.
 
 ---
 
