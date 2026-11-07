@@ -4,6 +4,7 @@ import type { StoredAction, Decision } from "@/lib/types";
 import { getDisplayStatus } from "./statusHelper";
 import { SAMPLE_CLEAN_INVOICE, SAMPLE_TRICKY_INVOICE } from "@/lib/samples";
 import type { DocumentResponsePayload, DocumentItemResult } from "@/app/api/request/document/route";
+import { getRuleLabel } from "@/lib/ruleLabels";
 
 interface RequestResultPayload {
   parse: ParseResult;
@@ -299,8 +300,11 @@ export const RequestBox: React.FC<RequestBoxProps> = ({
           </div>
 
           {action.ruleFired && (
-            <span className="text-xs text-[var(--color-ink-muted)] bg-[var(--color-page)] border border-[var(--color-line)] px-2.5 py-0.5 rounded-full shrink-0 font-normal">
-              {action.ruleFired}
+            <span
+              className="text-xs text-[var(--color-ink-muted)] bg-[var(--color-page)] border border-[var(--color-line)] px-2.5 py-0.5 rounded-full shrink-0 font-normal"
+              title={action.ruleFired}
+            >
+              {getRuleLabel(action.ruleFired)}
             </span>
           )}
         </div>
@@ -424,8 +428,11 @@ export const RequestBox: React.FC<RequestBoxProps> = ({
                   <div className="flex items-center gap-2">
                     {renderVerdictChip(item.action?.decision, item.action?.status)}
                     {item.action?.ruleFired && (
-                      <span className="text-[11px] text-[var(--color-ink-muted)] bg-[var(--color-surface)] border border-[var(--color-line)] px-2 py-0.5 rounded-full font-normal">
-                        {item.action.ruleFired}
+                      <span
+                        className="text-[11px] text-[var(--color-ink-muted)] bg-[var(--color-surface)] border border-[var(--color-line)] px-2 py-0.5 rounded-full font-normal"
+                        title={item.action.ruleFired}
+                      >
+                        {getRuleLabel(item.action.ruleFired)}
                       </span>
                     )}
                   </div>

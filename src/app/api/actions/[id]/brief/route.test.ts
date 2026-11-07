@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { GET } from "./route";
 import { setupTestDb, teardownTestDb } from "@/lib/testDb";
-import { insertAction, updateAction } from "@/lib/db";
+import { insertAction } from "@/lib/db";
 import { resetRateLimits } from "@/lib/rateLimit";
 import * as wording from "@/lib/briefWording";
 import { validateBriefWording } from "@/lib/briefWording";

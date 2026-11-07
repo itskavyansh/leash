@@ -10,6 +10,7 @@ import {
 import type { StoredAction } from "@/lib/types";
 import { StatusBadge } from "./statusHelper";
 import { MoneyDisplay } from "./MoneyDisplay";
+import { getRuleLabel } from "@/lib/ruleLabels";
 
 // Register Community Modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -414,8 +415,14 @@ export const Ledger: React.FC<LedgerProps> = ({ actions, onRefresh }) => {
 
                 <div>
                   <dt className="text-[11px] text-[var(--color-ink-muted)]">Policy decision</dt>
-                  <dd className="text-[var(--color-ink)] mt-0.5">
-                    {selectedAction.decision} • Rule {selectedAction.ruleFired}
+                  <dd className="text-[var(--color-ink)] mt-0.5 flex items-center gap-1.5 flex-wrap">
+                    <span>{selectedAction.decision} • Rule</span>
+                    <span
+                      className="text-[11px] text-[var(--color-ink-muted)] bg-[var(--color-page)] border border-[var(--color-line)] px-2 py-0.5 rounded-full font-normal"
+                      title={selectedAction.ruleFired}
+                    >
+                      {getRuleLabel(selectedAction.ruleFired)}
+                    </span>
                   </dd>
                 </div>
 

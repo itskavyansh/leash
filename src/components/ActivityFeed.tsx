@@ -20,6 +20,7 @@ import {
 } from "@/lib/ledgerFilterMapping";
 import { compareDatesInLocalTimezone } from "@/lib/dateComparator";
 import { buildBriefFacts, buildTemplateBrief } from "@/lib/briefFacts";
+import { getRuleLabel } from "@/lib/ruleLabels";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -481,11 +482,22 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
               </div>
             );
           }
+          const ruleLabel = getRuleLabel(params.data.ruleFired);
           return (
             <div className="flex flex-col justify-center h-full py-1 overflow-hidden" title={params.data.recipient}>
-              <span className="truncate text-[15px] font-medium text-[var(--color-ink)] leading-snug">
-                {params.data.recipient}
-              </span>
+              <div className="flex items-center gap-1.5 overflow-hidden">
+                <span className="truncate text-[15px] font-medium text-[var(--color-ink)] leading-snug">
+                  {params.data.recipient}
+                </span>
+                {ruleLabel && (
+                  <span
+                    className="shrink-0 text-[11px] text-[var(--color-ink-muted)] bg-[var(--color-page)] border border-[var(--color-line)] px-1.5 py-0.2 rounded-full font-normal"
+                    title={params.data.ruleFired}
+                  >
+                    {ruleLabel}
+                  </span>
+                )}
+              </div>
               <span className="truncate text-[13px] text-[var(--color-ink-muted)] leading-snug" title={params.data.reason}>
                 {params.data.reason}
               </span>
@@ -590,14 +602,15 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
     };
 
     // Step 2: Policy decision
+    const friendlyRule = getRuleLabel(selectedAction.ruleFired);
     let step2State: "done" | "current" | "not_reached" | "failed" = "done";
-    let step2Detail = `${selectedAction.decision.toUpperCase()} (${selectedAction.ruleFired})`;
+    let step2Detail = `${selectedAction.decision.toUpperCase()} (${friendlyRule || selectedAction.ruleFired})`;
     if (isPending) {
       step2State = "current";
       step2Detail = "Waiting for human approval";
     } else if (isBlocked || isRejected) {
       step2State = "failed";
-      step2Detail = isBlocked ? `Blocked (${selectedAction.ruleFired})` : "Rejected by human administrator";
+      step2Detail = isBlocked ? `Blocked (${friendlyRule || selectedAction.ruleFired})` : "Rejected by human administrator";
     }
     const step2 = {
       label: "Policy check",
@@ -804,8 +817,18 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
               >
                 {/* Left: label + recipient (15px, full) + reason (13px) + brief line */}
                 <div className="space-y-0.5">
-                  <div className="text-xs font-semibold text-[var(--color-wait)]">
-                    Needs you · {dateStr}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-[var(--color-wait)]">
+                      Needs you · {dateStr}
+                    </span>
+                    {action.ruleFired && (
+                      <span
+                        className="text-[11px] text-[var(--color-ink-muted)] bg-white/70 border border-[var(--color-line)] px-1.5 py-0.2 rounded-full font-normal"
+                        title={action.ruleFired}
+                      >
+                        {getRuleLabel(action.ruleFired)}
+                      </span>
+                    )}
                   </div>
                   <div className="text-[14px] text-[var(--color-ink-muted)]">
                     <span className="font-medium text-[var(--color-ink)]">{renderInboxSource(action)}</span>
@@ -1035,8 +1058,14 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
 
                 <div>
                   <dt className="text-[11px] text-[var(--color-ink-muted)]">Policy decision</dt>
-                  <dd className="text-[var(--color-ink)] mt-0.5">
-                    {selectedAction.decision} • Rule {selectedAction.ruleFired}
+                  <dd className="text-[var(--color-ink)] mt-0.5 flex items-center gap-1.5 flex-wrap">
+                    <span>{selectedAction.decision} • Rule</span>
+                    <span
+                      className="text-[11px] text-[var(--color-ink-muted)] bg-[var(--color-page)] border border-[var(--color-line)] px-2 py-0.5 rounded-full font-normal"
+                      title={selectedAction.ruleFired}
+                    >
+                      {getRuleLabel(selectedAction.ruleFired)}
+                    </span>
                   </dd>
                 </div>
 

@@ -1,6 +1,8 @@
 {
   "name": "leash",
   "version": "0.1.0",
+  "description": "A corporate card with rules, for your AI agent",
+  "license": "MIT",
   "private": true,
   "engines": {
     "node": ">=20"

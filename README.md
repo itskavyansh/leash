@@ -1,9 +1,10 @@
 # Leash
 
-> **An AI agent that runs your PayPal money tasks within rules you set.**
+> **A corporate card with rules, for your AI agent**
+
+Giving an AI agent direct access to your company bank account or payment gateway is dangerous because models can hallucinate, loop, or follow malicious prompt injections. Leash solves this by placing an uncompromising, deterministic policy engine between your AI agent and the real payment rails. The AI proposes financial actions, but deterministic code decides what executes, what asks for your approval, and what gets blocked.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-passing-brightgreen)](https://github.com/itskavyansh/leash)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16.4-black)](https://nextjs.org)
 
 ---
@@ -15,276 +16,126 @@
 
 ---
 
-## Why Leash?
+## Pipeline
 
-Autonomous AI agents with tool-calling capabilities can write code, draft emails, and coordinate work—but giving an AI model direct API keys or unfettered access to bank accounts and payment gateways is a major financial risk. Prompts can be injected, models hallucinate parameters, and autonomous loops can quickly drain balances.
-
-**The core thesis of Leash: The AI proposes, but deterministic code decides.**
-
-Instead of letting an LLM execute payment APIs directly:
-1. The AI translates unstructured natural language into a strictly typed, proposed financial action.
-2. An uncompromising, deterministic **Policy Engine** evaluates the action against hard limits, auto-approval thresholds, daily caps, and recipient allowlists.
-3. Only approved actions execute against PayPal Sandbox APIs. Risky or high-value actions halt in an interactive **Approval Inbox** awaiting human authorization.
-4. Webhooks reconcile real-time payment settlement back into a persistent ledger.
+```mermaid
+flowchart LR
+    Input["Input<br/>(Typed / Document / MCP Agent)"] --> AI["AI Proposes<br/>(Structured Actions)"]
+    AI --> Policy["Policy Engine Decides<br/>(Hard rules, caps, allowlists)"]
+    Policy --> Verdict{"Verdict"}
+    Verdict -->|Approve| Exec["PayPal Executor<br/>(Idempotent API call)"]
+    Verdict -->|Ask| Inbox["Approval Inbox<br/>(Human reviews & decides)"]
+    Verdict -->|Block| Blocked["Blocked<br/>(Audited in ledger)"]
+    Inbox -->|Owner Approves| Exec
+    Exec --> Settle["Webhooks & Reconciliation<br/>(Real-time settlement)"]
+    Settle --> Ledger["Audit Ledger<br/>(AG Grid, totals, CSV export)"]
+    Blocked --> Ledger
+```
 
 ---
 
 ## Features
 
-- **Natural Language Intent Parsing**: Accepts plain-English requests (e.g., *"Pay Sam $120 for the illustration"* or *"Invoice Acme Corp $850 for the logo design"*), forcing structured tool calls via Google Gemini with strict Zod validation.
-- **From a Document Input**: Ingests pasted document text or uploaded PDF, PNG, and JPG files (up to 5 MB, max 20,000 characters). The model treats the document strictly as untrusted data, extracts payment proposals (capped at 10), and feeds each proposal through the exact same deterministic policy engine and orchestrator as typed requests.
-- **Dynamic Model Fallback Cascade**: If the primary Gemini model encounters transient outages or rate limits (HTTP 429/503), requests automatically cycle through any fallback models specified in your environment (`LLM_FALLBACK_MODELS`).
-- **Deterministic Policy Engine**: Evaluates every action against financial rules before any payment gateway request is made.
-- **Approval Inbox**: Pending actions requiring human review are staged as interactive cards where admins can inspect policy reasons, approve, or reject.
-- **Atomic Execution & Idempotency**: Payment execution uses atomic database claims (`status = 'executing'`) and deterministic PayPal idempotency keys (`PayPal-Request-Id`) to guarantee against double-spending or race conditions.
-- **Real-Time Settlement via Webhooks**: Ingests, cryptographically verifies, and reconciles PayPal sandbox webhooks (invoices paid, payouts completed/failed, captures refunded) into an immutable Postgres audit ledger.
-- **AG Grid Audit Ledger**: Enterprise-grade table featuring multi-column sorting, built-in type filters, a quick-search filter, and a slide-over details drawer showing full request text, policy triggers, and PayPal IDs.
-- **Configurable Policy Panel**: Adjust auto-approve limits, hard limits, daily caps, allowed recipient allowlists, and blocked action types with instant validation.
-- **One-Click Demo Reset**: Reset actions, processed webhook deduplication logs, and policy rules back to seed state when demo mode is active.
+- **Typed Requests**: Natural language requests translated into structured, typed actions via Google Gemini with strict Zod validation.
+- **Documents (Untrusted Input)**: Ingests pasted text or uploaded PDF, PNG, and JPG invoices and receipts. Evaluates payments while treating the document strictly as untrusted data.
+- **Agents over MCP**: Exposes a Model Context Protocol server over Streamable HTTP (`/api/mcp`) so external agents can check rules, run dry runs, and submit payment requests.
+- **Ask Your Ledger**: Natural language question bar converts questions like "blocked payouts over $500 this week" into validated structured filters applied live to AG Grid.
+- **Approval Brief**: AI-worded single-sentence summary for pending inbox items, computed exclusively from verified historical facts with zero free-text injection risk.
+- **Deterministic Policy Rules**: Instant evaluation across auto-approve limits, hard limits, daily spend caps, allowed recipient allowlists, and blocked action types.
+- **Audit Ledger with Totals & CSV**: AG Grid table with multi-column sorting, quick search, local timezone date filters, filtered totals pinned to the bottom row, and CSV export.
 
 ---
 
-## Architecture
+## Where AI Is Used
 
-```mermaid
-flowchart TD
-    User([User / Browser UI]) -->|POST /api/request| APIRequest["/api/request"]
-    APIRequest -->|Rate Limit Check| RateLimit["In-Memory Rate Limiter"]
-    RateLimit --> Orchestrator["Orchestrator"]
-    Orchestrator -->|System Prompt & Tools| LLM["LLM Provider (Gemini)"]
-    LLM -->|Fallback on 429/503| Fallback["Model Fallback Cascade"]
-    LLM -->|Structured Parse| ZodParse["Zod Action Schema"]
-    ZodParse --> PolicyEngine["Deterministic Policy Engine"]
-    
-    PolicyEngine -->|Decision: approve| AutoExec["Executor (Immediate Run)"]
-    PolicyEngine -->|Decision: needs_approval| Inbox["Approval Inbox (pending_approval)"]
-    PolicyEngine -->|Decision: blocked| Blocked["Audit Ledger (blocked)"]
-    
-    Inbox -->|POST /api/actions/:id/approve| ApproveRoute["Approve Action"]
-    ApproveRoute -->|Re-verify Hard Checks| AutoExec
-    
-    AutoExec -->|Atomic DB Claim| Postgres[(Postgres / Supabase)]
-    AutoExec -->|Idempotent REST Call| PayPal["PayPal Sandbox APIs<br/>(Invoices / Payouts / Refunds)"]
-    
-    PayPal -.->|Webhook Event| WebhookRoute["/api/webhooks/paypal"]
-    WebhookRoute -->|Signature Verification| WebhookVerify["Verify Signature"]
-    WebhookVerify -->|Reconcile Status| Postgres
-    
-    Postgres -->|GET /api/actions| LedgerUI["AG Grid Audit Ledger"]
-```
+| Feature | What the AI Does | What Code Decides |
+| :--- | :--- | :--- |
+| **Parse Typed Request** | Extracts recipient, amount, action type, and description into a structured tool call. | Zod validates the schema. The deterministic policy engine evaluates limits, caps, and allowlists. |
+| **Extract Payments from Documents** | Reads untrusted text or images (PDF/PNG/JPG) and proposes payable items. | Enforces a maximum of 10 proposals. Evaluates each proposal sequentially against policy rules and accumulated daily spend. |
+| **MCP Agent Demo** | Autonomous agent formulates procurement goals and calls MCP tools. | MCP tools only allow checking rules and requesting payments. Agents cannot approve, edit rules, or bypass policy. |
+| **Ledger Query to Filters** | Translates natural language questions into structured filter criteria (`apply_filters`). | Zod validates filter ranges and enums. Safe client code translates criteria into AG Grid filter models. |
+| **Approval Brief Wording** | Words a concise summary sentence using only pre-computed numeric facts. | Computes all facts in pure code. Validates that every number in the brief is authentic, with zero URLs, emails, or free text allowed. |
 
 ---
 
-## How the Policy Engine Works
+## What the AI Cannot Do
 
-The policy engine operates as a pure, deterministic function (`evaluate(action, rules, spentToday)`). It executes in a strict evaluation order where **Hard Rules** block immediately, **Soft Limits** route to human approval, and only requests passing all thresholds are auto-approved:
-
-| Order | Rule Check | Condition | Decision | Rule Triggered |
-| :---: | :--- | :--- | :--- | :--- |
-| **1** | **Amount Validation** | Amount is non-positive or non-finite | **`blocked`** | `invalid_amount` |
-| **2** | **Action Type Block** | Action type is in `blockedActionTypes` | **`blocked`** | `blocked_action_type` |
-| **3** | **Recipient Allowlist** | `send_payout` recipient not in `allowedRecipients` | **`blocked`** | `recipient_not_allowed` |
-| **4** | **Hard Limit** | Amount > `hardLimit` | **`blocked`** | `hard_limit` |
-| **5** | **Daily Spending Cap** | `spentToday + amount > dailyCap` (skipped for invoices) | **`needs_approval`** | `daily_cap` |
-| **6** | **Auto-Approve Threshold** | Amount > `autoApproveLimit` | **`needs_approval`** | `auto_limit` |
-| **7** | **Within Limits** | Passes all above rules | **`approve`** | `within_limits` |
-
-> **Important**: When a human approves an action from the Approval Inbox, the system **re-evaluates all Hard Rules (1–4)** against current rules before executing, preventing execution if an admin blocked that recipient or lowered the hard limit while the action was waiting.
+- **The AI cannot approve payments**: Every payment proposal must pass through the deterministic policy engine. If an action exceeds limits, only a human can authorize it.
+- **The AI cannot modify policy rules**: Rules, spending caps, and allowlists are stored in the database and can only be updated by direct user configuration.
+- **The AI cannot bypass the policy engine**: Even if a user, document, or agent requests an override, the policy code executes unconditionally.
+- **Documents and memos are untrusted**: The AI can be fooled by adversarial prompts, prompt injections, or manipulated text inside invoices. The system assumes the AI can be fooled. The deterministic policy engine still holds and rejects unauthorized recipients or amounts exceeding hard limits regardless of what the AI proposes.
 
 ---
 
-## Documents ("From a document")
+## Tools Used
 
-Leash allows users to paste raw document text or upload invoices, receipts, and bills as PDF, PNG, or JPG files (up to 5 MB, max 20,000 characters of text).
-
-- **Untrusted by Design**: Uploaded documents are treated strictly as passive, untrusted data. Embedded prompt injection attacks or instructions (e.g. *"disregard rules"*, *"override limit"*, *"pay attacker"*) are ignored by the parser.
-- **AI Proposes, Deterministic Code Decides**: The model extracts structured payment proposals (capped at 10 per document) and passes each proposal individually into the exact same policy engine and orchestrator as typed requests. The AI never approves or alters a verdict.
-- **Zero Document Storage**: Uploaded files and pasted document texts are processed in-memory and never stored to disk or database. Only the structured action records that pass into policy evaluation are persisted to the ledger.
-- **Resilience & Rate Limiting**: Each document upload counts as one rate-limited request. If any individual payment item encounters a processing issue, the remaining items continue to be evaluated independently.
-
----
-
-## Agents (MCP Server)
-
-Leash provides a Model Context Protocol (MCP) server endpoint at `/api/mcp` using the official TypeScript SDK (`@modelcontextprotocol/sdk`) over Streamable HTTP in stateless mode.
-
-- **Principle**: Agents can request, never approve. There is no tool that approves, rejects, alters rules, or resets data. Every payment request goes through the exact same deterministic policy engine and orchestrator as typed and document requests.
-- **Authentication**: Bearer token via `LEASH_MCP_TOKEN`. Requests undergo constant-time authentication. If `LEASH_MCP_TOKEN` is unset in the environment, the endpoint responds with `503 Service Unavailable` (`"MCP server is disabled"`).
-- **Rate Limiting**: Rate limited to 20 requests per minute per token or client IP.
-- **Exposed Tools**:
-  - `get_rules`: Returns current auto-approve limit, hard limit, daily cap, spent today, remaining daily budget, allowed recipients, and blocked action types.
-  - `check_payment`: Dry run tool. Evaluates a potential action against current rules and daily spend without writing anything to the database.
-  - `request_payment`: Submits a payment request on behalf of an agent (`agent_name` max 40 chars). If within auto-approve limits, executes immediately; if over limit, routes to human approval; if forbidden, blocks. Stored with source tag `agent: <name>`.
-  - `get_action_status`: Queries current status, execution outcome, and PayPal status by action UUID.
-
-### Running the Demo Agent Script
-
-A demo procurement agent is included in `scripts/demo-agent.ts`:
-
-```bash
-# Set environment variables
-export LEASH_URL="http://localhost:3000"
-export LEASH_MCP_TOKEN="your-mcp-token"
-export GEMINI_API_KEY="your-gemini-key" # only needed for LLM mode
-export DEMO_AGENT_RECIPIENT="your-sandbox-personal-email@example.com" # optional; set to a real PayPal sandbox personal email for a SUCCESS settlement instead of default sb-sub@example.com
-
-# Run with scripted mock flow (no LLM required)
-npm run demo:agent -- --scripted
-
-# Run with full Gemini LLM function-calling mode
-npm run demo:agent
-```
+- **PayPal APIs**: Integrates with PayPal REST endpoints including OAuth2 token creation (`/v1/oauth2/token`), Invoicing v2 draft creation and sending (`/v2/invoicing/invoices`, `/send`), Payouts v1 batch creation (`/v1/payments/payouts`), Captures v2 refunds (`/v2/payments/captures/{id}/refund`), status reconciliation (`/v1/payments/payouts/{id}`, `/v2/invoicing/invoices/{id}`, `/v2/payments/refunds/{id}`), and Webhook signature verification (`/v1/notifications/verify-webhook-signature`).
+- **Google Gemini**: Uses `@google/genai` with `gemini-2.5-flash` (and configured fallbacks) for structured tool calling, document payment extraction via inline image data, natural language ledger queries, and approval brief wording.
+- **AG Grid Community (v36)**: Implements client-side sorting, column filtering (`agTextColumnFilter`, `agNumberColumnFilter`, `agDateColumnFilter` with local timezone comparator), quick filter, pinned bottom totals row, and CSV export (`exportDataAsCsv`).
+- **Render**: Deploys web service instances with automated builds from GitHub and health checks via `/api/health`.
+- **Supabase Postgres**: Persistent relational database with SSL connection pooling, storing rules, actions, and processed webhook deduplication events.
+- **MCP TypeScript SDK**: Uses `@modelcontextprotocol/sdk` (v1.32.2) over Streamable HTTP in stateless mode to provide tool capabilities to external agents.
 
 ---
 
-## Tech & Tools Used
-
-- **[Next.js 16 (App Router)](https://nextjs.org/)**: Full-stack framework with React 19, Turbopack, and server-side Route Handlers.
-- **[TypeScript](https://www.typescriptlang.org/)**: Strict end-to-end type safety without any `any` types.
-- **[Postgres (Supabase)](https://supabase.com/)**: Hosted PostgreSQL database with SSL connection pooling, Row Level Security (RLS) enabled, and transactional resets.
-- **[PGlite](https://pglite.dev/)**: Embedded WASM/in-memory Postgres used for fast, self-contained automated tests without requiring external database dependencies.
-- **[Google Gemini (`@google/genai`)](https://github.com/google-gemini/gemini-api-js)**: Native structured tool-calling for intent extraction.
-- **[Zod](https://zod.dev/)**: Runtime schema validation for tool calls, API request bodies, and rule mutations.
-- **[PayPal Sandbox APIs](https://developer.paypal.com/)**: REST integrations for Invoicing v2, Payouts v1, Captures/Refunds v2, and Webhooks v1.
-- **[AG Grid Community (v36)](https://www.ag-grid.com/)**: Fast financial grid with sorting, type filtering, quick-search, and custom cell renderers.
-- **[Tailwind CSS v4](https://tailwindcss.com/)**: Modern dark-mode interface with accessible states and responsive design.
-- **[Vitest](https://vitest.dev/)**: Test runner executing comprehensive unit and integration tests across policies, database, webhooks, orchestrator, and route handlers.
-- **[Render](https://render.com/)**: Automated deployment configuration via Infrastructure-as-Code Blueprint (`render.yaml`).
-
----
-
-## Database Setup
-
-Leash uses Postgres for persistent storage, hosted on Supabase (or any Postgres provider).
-
-1. **Create a Supabase project**:
-   - Go to [database.new](https://database.new) and create a project.
-2. **Retrieve Connection String**:
-   - Go to **Project Settings** -> **Database** -> **Connection string**.
-   - Use the **Session pooler** (or direct connection) URI.
-3. **Set `DATABASE_URL`**:
-   - Add your connection string to `.env.local` (and in your production host environment variables):
-     ```ini
-     DATABASE_URL=postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres
-     ```
-4. **Automatic Table Initialization**:
-   - Tables (`rules`, `actions`, `processed_events`) and Row Level Security (RLS) are created automatically on the first database query. You do not need to run manual SQL migrations.
-5. **Testing with PGlite**:
-   - Automated tests run against an in-memory instance of `@electric-sql/pglite`. No external database connection or Supabase project is needed to run `npm test`.
-
----
-
-## Setup & Run Locally
+## Setup and Local Development
 
 ### Prerequisites
 
-- **Node.js**: `>= 20.18.0`
-- **npm**: `>= 10.0.0`
-- **PayPal Developer Account**: Sandbox **Business (Merchant)** account based in the United States with **Invoicing**, **Payouts**, and **Transaction Search** capabilities enabled in the developer dashboard.
+- Node.js >= 20.18.0
+- npm >= 10.0.0
+- PayPal Developer Sandbox account
 
 ### Installation
 
-1. **Clone the repository**:
+1. Clone the repository and install dependencies:
    ```bash
    git clone https://github.com/itskavyansh/leash.git
    cd leash
-   ```
-
-2. **Install dependencies**:
-   ```bash
    npm install
    ```
 
-3. **Configure Environment Variables**:
-   Copy the example environment template:
+2. Configure environment variables:
+   Copy `.env.example` to `.env.local` and provide your credentials:
    ```bash
    cp .env.example .env.local
    ```
-   Fill in the required credentials in `.env.local`:
-   ```ini
-   # Database (Postgres / Supabase)
-   DATABASE_URL=postgresql://...
 
-   # PayPal Sandbox Credentials
-   PAYPAL_ENV=sandbox
-   PAYPAL_CLIENT_ID=your_sandbox_client_id
-   PAYPAL_CLIENT_SECRET=your_sandbox_client_secret
-   PAYPAL_WEBHOOK_ID=your_webhook_id_here
-   WEBHOOK_SKIP_VERIFY=true
+   **Required Environment Variable Names:**
+   - `DATABASE_URL` (Postgres / Supabase connection URL)
+   - `PAYPAL_ENV` (`sandbox` or `production`)
+   - `PAYPAL_CLIENT_ID` (PayPal REST application client ID)
+   - `PAYPAL_CLIENT_SECRET` (PayPal REST application secret)
+   - `PAYPAL_WEBHOOK_ID` (PayPal webhook ID for signature verification)
+   - `WEBHOOK_SKIP_VERIFY` (`true` to skip verification in non-production local development)
+   - `LLM_PROVIDER` (`gemini`)
+   - `LLM_MODEL` (`gemini-2.5-flash`)
+   - `LLM_FALLBACK_MODELS` (Comma-separated fallback model names)
+   - `GEMINI_API_KEY` (Google Gemini API key)
+   - `DEMO_MODE` (`true` to enable demo reset controls)
+   - `LEASH_MCP_TOKEN` (Bearer token for MCP endpoint authentication)
+   - `DEFAULT_ALLOWED_RECIPIENTS` (Optional comma-separated email list appended to default seed rules)
+   - `DEMO_AGENT_RECIPIENT` (Optional recipient email for the demo agent script)
 
-   # AI Provider Configuration (Google Gemini)
-   LLM_PROVIDER=gemini
-   LLM_MODEL=gemini-2.5-flash
-   LLM_FALLBACK_MODELS=model-name-2,model-name-3
-   GEMINI_API_KEY=your_gemini_api_key
-
-   # Enable Demo Mode controls (Reset button)
-   DEMO_MODE=true
-   ```
-
-4. **Run the Development Server**:
+3. Run the development server:
    ```bash
    npm run dev
    ```
    Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-5. **Run the Test Suite**:
+4. Run tests:
    ```bash
    npm test
    ```
+   All tests run against in-memory `@electric-sql/pglite` without requiring external network connections.
 
 ---
 
-## "Try It" Walkthrough
+## Deployment Notes
 
-Use the input box or the built-in example chips to test the autonomous policy engine:
-
-1. **Auto-Approved Payout ($120)**:
-   - **Input**: `"Pay Sam (sb-sub@example.com) $120 for the illustration"`
-   - **Expected Outcome**: The payout is within the auto-approve limit ($200) and sent to an allowed recipient (`sb-sub@example.com`). It immediately executes via PayPal Payouts API and appears as **`approved` / `completed`** (green badge).
-2. **Action Requiring Approval ($450)**:
-   - **Input**: `"Pay Sam (sb-sub@example.com) $450 for the full brand package"`
-   - **Expected Outcome**: Exceeds the $200 auto-approve limit. Staged in the **Approval Inbox** as **`pending_approval`** (amber badge). Clicking **Approve & Execute** completes the payment; clicking **Reject** marks it rejected.
-3. **Auto-Approved Invoice ($850)**:
-   - **Input**: `"Invoice Acme Corp (billing@acme.com) $850 for the logo design"`
-   - **Expected Outcome**: Invoices request payment from clients rather than spending funds, so they do not count against your daily spending cap. The draft invoice is created and sent via PayPal Invoicing API.
-4. **Policy Blocked Recipient**:
-   - **Input**: `"Pay hacker@evil.com $50"`
-   - **Expected Outcome**: Blocked immediately with reason: `Recipient "hacker@evil.com" is not in the allowed recipients list for payouts` (red badge). No payment call is made.
-
----
-
-## PayPal Webhooks & Reconciliation
-
-Leash provides a webhook handler endpoint at `/api/webhooks/paypal` to capture asynchronous payment lifecycle events:
-- `INVOICING.INVOICE.PAID` & `CANCELLED`
-- `PAYMENT.PAYOUTS-ITEM.SUCCEEDED` & `FAILED`
-- `PAYMENT.PAYOUTSBATCH.SUCCESS`
-- `PAYMENT.CAPTURE.REFUNDED`
-
-### Setting up Sandbox Webhooks
-1. In your PayPal Developer Dashboard, navigate to your REST App.
-2. Add a Webhook URL pointing to your deployment: `https://<your-domain>/api/webhooks/paypal`.
-3. Select the invoicing, payout, and payment capture events.
-4. Copy the generated **Webhook ID** into your `PAYPAL_WEBHOOK_ID` environment variable.
-
-### Simulating Webhooks Locally
-To test the webhook processing pipeline without exposing a public tunnel:
-```bash
-npm run sim:webhook
-```
-This triggers synthetic PayPal webhook payloads against your local database to verify state transitions and deduplication.
-
----
-
-## Security & Reliability Design
-
-- **Code-Enforced Policies**: Rules are never left to prompt engineering or LLM discretion. Every financial decision is calculated deterministically in TypeScript.
-- **Strict Injection Defense**: System prompts mandate that user input is treated strictly as plain data. Any prompt injection attempting to bypass limits or approve transfers is ignored.
-- **PayPal Idempotency Keys**: All outbound calls generate unique `PayPal-Request-Id` headers derived from internal UUIDs, guaranteeing safe retries without duplicate payments.
-- **Atomic Concurrency Protection**: Actions transition to `executing` status via atomic Postgres `UPDATE actions SET status = 'executing' WHERE id = $1 AND status = 'approved' RETURNING id` queries, preventing concurrent workers from running the same action twice.
-- **Production Webhook Verification**: `WEBHOOK_SKIP_VERIFY` is automatically ignored in `NODE_ENV === "production"`, enforcing cryptographic validation of PayPal transmission signatures (`paypal-transmission-sig`, cert URL, and timestamp).
-- **Anti-Spam Rate Limiting**: Write endpoints (`POST /api/request`, approve, and reject) are protected by a sliding-window rate limiter (20 requests per minute per IP), returning HTTP 429 when exceeded.
+- Deployable as a web service on Render, Vercel, or any Node.js container host.
+- A ready-to-use Blueprint is included in `render.yaml`.
+- When deployed on Render free instances, the service may spin down after periods of inactivity and take a moment to wake on the initial request.
 
 ---
 
