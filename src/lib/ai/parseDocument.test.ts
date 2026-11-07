@@ -395,5 +395,56 @@ describe("Document Input and Policy Integration", () => {
       dbMock.mockRestore();
       spy.mockRestore();
     });
+
+    it("evaluates multiple proposals in the same document with sequential spend against dailyCap", async () => {
+      // Document produces two proposals of $600 each when dailyCap is $1000
+      const spy = vi.spyOn(mockAi, "parseDocument").mockResolvedValueOnce({
+        kind: "actions",
+        proposals: [
+          {
+            action: {
+              type: "send_payout",
+              amount: 600,
+              currency: "USD",
+              recipient: "sb-sub@example.com",
+              description: "Batch Item 1",
+            },
+          },
+          {
+            action: {
+              type: "send_payout",
+              amount: 600,
+              currency: "USD",
+              recipient: "sb-sub@example.com",
+              description: "Batch Item 2",
+            },
+          },
+        ],
+      });
+
+      const req = new Request("http://localhost/api/request/document", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Two $600 items" }),
+      });
+
+      const res = await documentPost(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+
+      expect(json.proposalsCount).toBe(2);
+      // Item 1 ($600): autoApproveLimit is $200, dailyCap is $1000.
+      // 0 + 600 <= 1000, so ruleFired is auto_limit (exceeds $200 auto-approve)
+      expect(json.results[0].action.decision).toBe("needs_approval");
+      expect(json.results[0].action.ruleFired).toBe("auto_limit");
+
+      // Item 2 ($600): pending spend from item 1 should make projected spend 600 + 600 = 1200 > 1000!
+      // Therefore, Item 2 MUST trigger daily_cap, NOT auto_limit!
+      expect(json.results[1].action.decision).toBe("needs_approval");
+      expect(json.results[1].action.ruleFired).toBe("daily_cap");
+      expect(json.results[1].action.reason).toContain("exceeds your $1000.00 daily cap");
+
+      spy.mockRestore();
+    });
   });
 });

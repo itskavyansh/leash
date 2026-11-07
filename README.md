@@ -104,6 +104,38 @@ Leash allows users to paste raw document text or upload invoices, receipts, and 
 
 ---
 
+## Agents (MCP Server)
+
+Leash provides a Model Context Protocol (MCP) server endpoint at `/api/mcp` using the official TypeScript SDK (`@modelcontextprotocol/sdk`) over Streamable HTTP in stateless mode.
+
+- **Principle**: Agents can request, never approve. There is no tool that approves, rejects, alters rules, or resets data. Every payment request goes through the exact same deterministic policy engine and orchestrator as typed and document requests.
+- **Authentication**: Bearer token via `LEASH_MCP_TOKEN`. Requests undergo constant-time authentication. If `LEASH_MCP_TOKEN` is unset in the environment, the endpoint responds with `503 Service Unavailable` (`"MCP server is disabled"`).
+- **Rate Limiting**: Rate limited to 20 requests per minute per token or client IP.
+- **Exposed Tools**:
+  - `get_rules`: Returns current auto-approve limit, hard limit, daily cap, spent today, remaining daily budget, allowed recipients, and blocked action types.
+  - `check_payment`: Dry run tool. Evaluates a potential action against current rules and daily spend without writing anything to the database.
+  - `request_payment`: Submits a payment request on behalf of an agent (`agent_name` max 40 chars). If within auto-approve limits, executes immediately; if over limit, routes to human approval; if forbidden, blocks. Stored with source tag `agent: <name>`.
+  - `get_action_status`: Queries current status, execution outcome, and PayPal status by action UUID.
+
+### Running the Demo Agent Script
+
+A demo procurement agent is included in `scripts/demo-agent.ts`:
+
+```bash
+# Set environment variables
+export LEASH_URL="http://localhost:3000"
+export LEASH_MCP_TOKEN="your-mcp-token"
+export GEMINI_API_KEY="your-gemini-key" # only needed for LLM mode
+
+# Run with scripted mock flow (no LLM required)
+npm run demo:agent -- --scripted
+
+# Run with full Gemini LLM function-calling mode
+npm run demo:agent
+```
+
+---
+
 ## Tech & Tools Used
 
 - **[Next.js 16 (App Router)](https://nextjs.org/)**: Full-stack framework with React 19, Turbopack, and server-side Route Handlers.

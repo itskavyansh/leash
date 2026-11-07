@@ -61,6 +61,7 @@ export async function handleRequest(
     reason: policyResult.reason,
     ruleFired: policyResult.ruleFired,
     requestText: text,
+    source: "typed",
   });
 
   return {
@@ -76,10 +77,13 @@ export async function handleRequest(
 export async function processProposedAction(
   action: import("./types").ProposedAction,
   requestText?: string,
-  deps?: import("./executor").ExecutorDeps
+  deps?: import("./executor").ExecutorDeps,
+  extraSpentToday: number = 0,
+  source: string = "typed"
 ): Promise<ActionRecord> {
   const rules = await getRules();
-  const spentToday = await getSpentToday();
+  const dbSpentToday = await getSpentToday();
+  const spentToday = dbSpentToday + extraSpentToday;
   const policyResult = evaluate(action, rules, spentToday);
 
   const status = mapDecisionToStatus(policyResult.decision);
@@ -96,6 +100,7 @@ export async function processProposedAction(
     reason: policyResult.reason,
     ruleFired: policyResult.ruleFired,
     requestText: requestText ?? null,
+    source,
   });
 
   if (storedAction.status === "approved") {

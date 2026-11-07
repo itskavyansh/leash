@@ -107,6 +107,17 @@ body {
   border-bottom-color: var(--color-line-soft) !important;
 }
 
+/* Ensure right-aligned headers keep their filter/menu buttons neatly on the right next to the title */
+.ag-theme-quartz .ag-right-aligned-header .ag-cell-label-container {
+  flex-direction: row !important;
+  justify-content: flex-end !important;
+}
+
+.ag-theme-quartz .ag-right-aligned-header .ag-header-cell-label {
+  flex-direction: row !important;
+  justify-content: flex-end !important;
+}
+
 /* Transitions respecting prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {

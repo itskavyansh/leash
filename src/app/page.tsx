@@ -49,6 +49,8 @@ export default function Home() {
                 pendingActions={pendingActions}
                 onActionHandled={refresh}
                 onRefresh={refresh}
+                spentToday={spentToday}
+                dailyCap={dailyCap}
               />
             </div>
 

@@ -140,6 +140,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   // Process proposals through the existing orchestrator flow
   const results: DocumentItemResult[] = [];
+  let extraSpentToday = 0;
 
   for (const item of parseResult.proposals) {
     try {
@@ -148,7 +149,24 @@ export async function POST(request: Request): Promise<NextResponse> {
           ? documentInput.text.slice(0, 500)
           : `Extracted from document (${item.sourceNote ?? "file"})`;
 
-      const action = await processProposedAction(item.action, requestText);
+      const action = await processProposedAction(
+        item.action,
+        requestText,
+        undefined,
+        extraSpentToday,
+        "document"
+      );
+
+      // If this action was not immediately executed into db-tracked spend ('approved', 'executing', 'completed'),
+      // but is staged in the same document as pending_approval for a spending action,
+      // subsequent proposals in this document must account for it against dailyCap.
+      if (
+        action.type !== "send_invoice" &&
+        action.status === "pending_approval"
+      ) {
+        extraSpentToday += action.amount;
+      }
+
       results.push({
         proposal: item.action,
         sourceNote: item.sourceNote,

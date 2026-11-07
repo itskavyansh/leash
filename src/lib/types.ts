@@ -37,6 +37,7 @@ export interface StoredAction {
   paypalStatus: string | null;
   errorMessage: string | null;
   requestText: string | null;
+  source?: string | null;
 }
 
 export interface PolicyResult {

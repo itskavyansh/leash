@@ -22,6 +22,7 @@ export interface InsertActionInput {
   paypalStatus?: string | null;
   errorMessage?: string | null;
   requestText?: string | null;
+  source?: string | null;
 }
 
 export type UpdateActionPatch = Partial<
@@ -137,8 +138,14 @@ export async function ensureSchema(): Promise<void> {
         "paypalId" TEXT,
         "paypalStatus" TEXT,
         "errorMessage" TEXT,
-        "requestText" TEXT
+        "requestText" TEXT,
+        source TEXT
       );
+    `);
+
+    // Ensure additive source column exists if table was created previously
+    await client.query(`
+      ALTER TABLE actions ADD COLUMN IF NOT EXISTS source TEXT;
     `);
 
     await client.query(`
@@ -240,6 +247,7 @@ function mapActionRow(row: Record<string, unknown>): ActionRecord {
     paypalStatus: row.paypalStatus !== null && row.paypalStatus !== undefined ? String(row.paypalStatus) : null,
     errorMessage: row.errorMessage !== null && row.errorMessage !== undefined ? String(row.errorMessage) : null,
     requestText: row.requestText !== null && row.requestText !== undefined ? String(row.requestText) : null,
+    source: row.source !== null && row.source !== undefined ? String(row.source) : null,
   };
 }
 
@@ -264,16 +272,17 @@ export async function insertAction(action: InsertActionInput): Promise<ActionRec
     paypalStatus: action.paypalStatus ?? null,
     errorMessage: action.errorMessage ?? null,
     requestText: action.requestText ?? null,
+    source: action.source ?? null,
   };
 
   await client.query(
     `
     INSERT INTO actions (
       id, "createdAt", type, amount, currency, recipient, description, reference,
-      status, decision, reason, "ruleFired", "paypalId", "paypalStatus", "errorMessage", "requestText"
+      status, decision, reason, "ruleFired", "paypalId", "paypalStatus", "errorMessage", "requestText", source
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8,
-      $9, $10, $11, $12, $13, $14, $15, $16
+      $9, $10, $11, $12, $13, $14, $15, $16, $17
     )
   `,
     [
@@ -293,6 +302,7 @@ export async function insertAction(action: InsertActionInput): Promise<ActionRec
       record.paypalStatus,
       record.errorMessage,
       record.requestText,
+      record.source,
     ]
   );
 

@@ -31,6 +31,32 @@ interface ActivityFeedProps {
   pendingActions: StoredAction[];
   onActionHandled: () => Promise<void>;
   onRefresh?: () => Promise<void> | void;
+  spentToday?: number;
+  dailyCap?: number;
+}
+
+function formatSource(source?: string | null): string {
+  if (!source) return "Typed";
+  const s = source.trim();
+  if (s.toLowerCase() === "typed") return "Typed";
+  if (s.toLowerCase() === "document") return "Document";
+  if (s.toLowerCase().startsWith("agent:")) {
+    const name = s.slice(6).trim();
+    return name ? `Agent: ${name}` : "Agent";
+  }
+  return s;
+}
+
+function renderInboxSource(action: StoredAction): string {
+  const s = (action.source || "typed").trim();
+  if (s.toLowerCase().startsWith("agent:")) {
+    const name = s.slice(6).trim();
+    return `Agent "${name || "unknown"}" wants to pay`;
+  }
+  if (s.toLowerCase() === "document") {
+    return "Document request wants to pay";
+  }
+  return "Typed request wants to pay";
 }
 
 export const ActivityFeed: React.FC<ActivityFeedProps> = ({
@@ -38,6 +64,8 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
   pendingActions,
   onActionHandled,
   onRefresh,
+  spentToday = 0,
+  dailyCap = 1000,
 }) => {
   const [quickFilterText, setQuickFilterText] = useState("");
   const [selectedAction, setSelectedAction] = useState<StoredAction | null>(null);
@@ -158,13 +186,13 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
       {
         field: "createdAt",
         headerName: "Time",
-        width: 110,
+        width: 140,
         sort: "desc",
         valueFormatter: (params) => {
           if (!params.value) return "";
           return formatCompactTime(params.value);
         },
-        cellClass: "tabular-nums text-[13px] text-[var(--color-ink-muted)] flex items-center",
+        cellClass: "tabular-nums text-[13px] text-[var(--color-ink-muted)] flex items-center whitespace-nowrap",
         filter: false,
         suppressHeaderMenuButton: true,
       },
@@ -175,6 +203,24 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
         cellRenderer: (params: { value?: string }) => {
           if (!params.value) return "";
           return renderTypeCell(params.value);
+        },
+        cellClass: "flex items-center",
+        filter: "agTextColumnFilter",
+        suppressHeaderMenuButton: true,
+      },
+      {
+        field: "source",
+        headerName: "Source",
+        width: 120,
+        cellRenderer: (params: { value?: string | null }) => {
+          const label = formatSource(params.value);
+          return (
+            <div className="flex items-center h-full">
+              <span className="text-[13px] text-[var(--color-ink-muted)] truncate" title={label}>
+                {label}
+              </span>
+            </div>
+          );
         },
         cellClass: "flex items-center",
         filter: "agTextColumnFilter",
@@ -397,8 +443,10 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
                   <div className="text-xs font-semibold text-[var(--color-wait)]">
                     Needs you · {dateStr}
                   </div>
-                  <div className="text-[15px] font-medium text-[var(--color-ink)] break-all">
-                    {action.recipient}
+                  <div className="text-[14px] text-[var(--color-ink-muted)]">
+                    <span className="font-medium text-[var(--color-ink)]">{renderInboxSource(action)}</span>
+                    {" "}
+                    <span className="break-all font-mono text-xs">{action.recipient}</span>
                   </div>
                   <div className="text-[13px] text-[var(--color-ink-muted)]">
                     {action.reason}
@@ -411,29 +459,40 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
                 </div>
 
                 {/* Right: amount in Newsreader 28px + Reject outline button + Approve brand button */}
-                <div className="flex items-center gap-3 shrink-0 self-end md:self-center">
-                  <span className="font-serif text-[28px] font-medium text-[var(--color-ink)] tabular-nums">
-                    <span className="text-[var(--color-ink-muted)] text-xl font-normal mr-[1px]">$</span>
-                    {action.amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 shrink-0 self-end md:self-center">
+                  <div className="flex items-center gap-3">
+                    <span className="font-serif text-[28px] font-medium text-[var(--color-ink)] tabular-nums">
+                      <span className="text-[var(--color-ink-muted)] text-xl font-normal mr-[1px]">$</span>
+                      {action.amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
 
-                  <button
-                    type="button"
-                    onClick={() => handleReject(action.id)}
-                    disabled={Boolean(currentLoading)}
-                    className="h-9 px-3 rounded-[var(--radius-control)] bg-white border border-[var(--color-line)] hover:bg-[var(--color-page)] text-xs font-medium text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-btn cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)]"
-                  >
-                    {currentLoading === "reject" ? "Rejecting..." : "Reject"}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => handleReject(action.id)}
+                      disabled={Boolean(currentLoading)}
+                      className="h-9 px-3 rounded-[var(--radius-control)] bg-white border border-[var(--color-line)] hover:bg-[var(--color-page)] text-xs font-medium text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-btn cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)]"
+                    >
+                      {currentLoading === "reject" ? "Rejecting..." : "Reject"}
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => handleApprove(action.id)}
-                    disabled={Boolean(currentLoading)}
-                    className="h-9 px-4 rounded-[var(--radius-control)] bg-[var(--color-brand)] hover:bg-[var(--color-brand-hover)] text-white text-xs font-medium transition-btn disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)] focus:ring-offset-1 inline-flex items-center justify-center min-w-[72px]"
-                  >
-                    {currentLoading === "approve" ? "Approving..." : "Approve"}
-                  </button>
+                    <div className="flex flex-col items-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleApprove(action.id)}
+                        disabled={Boolean(currentLoading)}
+                        className="h-9 px-4 rounded-[var(--radius-control)] bg-[var(--color-brand)] hover:bg-[var(--color-brand-hover)] text-white text-xs font-medium transition-btn disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)] focus:ring-offset-1 inline-flex items-center justify-center min-w-[72px]"
+                      >
+                        {currentLoading === "approve" ? "Approving..." : "Approve"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Over daily cap amber indicator if approving would push today's spend over daily cap */}
+                  {action.type !== "send_invoice" && spentToday + action.amount > dailyCap && (
+                    <span className="text-[11px] font-medium text-[var(--color-wait)] bg-[var(--color-wait-tint)] border border-[var(--color-wait-solid)]/30 px-2 py-0.5 rounded-full whitespace-nowrap self-end sm:self-center">
+                      This puts you over your daily cap
+                    </span>
+                  )}
                 </div>
               </div>
             );
@@ -581,6 +640,13 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
             {/* Plain definition list */}
             <div className="py-4 space-y-3 text-xs">
               <dl className="space-y-2.5">
+                <div>
+                  <dt className="text-[11px] text-[var(--color-ink-muted)]">Source</dt>
+                  <dd className="text-[var(--color-ink)] mt-0.5">
+                    {formatSource(selectedAction.source)}
+                  </dd>
+                </div>
+
                 <div>
                   <dt className="text-[11px] text-[var(--color-ink-muted)]">Action ID</dt>
                   <dd className="font-mono text-[11px] text-[var(--color-ink)] mt-0.5 break-all">
