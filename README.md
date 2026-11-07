@@ -126,6 +126,7 @@ A demo procurement agent is included in `scripts/demo-agent.ts`:
 export LEASH_URL="http://localhost:3000"
 export LEASH_MCP_TOKEN="your-mcp-token"
 export GEMINI_API_KEY="your-gemini-key" # only needed for LLM mode
+export DEMO_AGENT_RECIPIENT="your-sandbox-personal-email@example.com" # optional; set to a real PayPal sandbox personal email for a SUCCESS settlement instead of default sb-sub@example.com
 
 # Run with scripted mock flow (no LLM required)
 npm run demo:agent -- --scripted

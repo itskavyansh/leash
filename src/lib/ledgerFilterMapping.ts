@@ -250,3 +250,4 @@ export function getFilterChips(spec: FilterSpec): FilterChip[] {
 
   return chips;
 }
+

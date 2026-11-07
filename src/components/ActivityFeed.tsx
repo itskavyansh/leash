@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { AgGridReact } from "ag-grid-react";
 import {
   ModuleRegistry,
@@ -6,9 +6,18 @@ import {
   themeQuartz,
   ColDef,
   RowClickedEvent,
+  GridApi,
+  FilterChangedEvent,
+  GridReadyEvent,
 } from "ag-grid-community";
 import type { StoredAction } from "@/lib/types";
 import { StatusBadge } from "./statusHelper";
+import { FilterSpec, LedgerQueryResult } from "@/lib/ai/parseLedgerQuery";
+import {
+  filterSpecToAgGridModel,
+  getFilterChips,
+  FilterChip,
+} from "@/lib/ledgerFilterMapping";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -59,19 +68,45 @@ function renderInboxSource(action: StoredAction): string {
   return "Typed request wants to pay";
 }
 
+function formatCompactTime(isoString: string): string {
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return isoString;
+    return d.toLocaleString("en-GB", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return isoString;
+  }
+}
+
 export const ActivityFeed: React.FC<ActivityFeedProps> = ({
   actions,
   pendingActions,
   onActionHandled,
-  onRefresh,
   spentToday = 0,
   dailyCap = 1000,
 }) => {
   const [quickFilterText, setQuickFilterText] = useState("");
   const [selectedAction, setSelectedAction] = useState<StoredAction | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadingIds, setLoadingIds] = useState<Record<string, "approve" | "reject" | null>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Ask your ledger state
+  const [askInput, setAskInput] = useState("");
+  const [isAsking, setIsAsking] = useState(false);
+  const [askError, setAskError] = useState<string | null>(null);
+  const [activeSpec, setActiveSpec] = useState<FilterSpec | null>(null);
+
+  // AG Grid ref & visible filtered totals
+  const gridApiRef = useRef<GridApi<StoredAction> | null>(null);
+  const [filteredTotal, setFilteredTotal] = useState<number>(() =>
+    actions.reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+  );
 
   // Close drawer on Escape
   useEffect(() => {
@@ -134,18 +169,134 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
     }
   };
 
-  const formatCompactTime = (isoString: string) => {
-    if (!isoString) return "";
-    const d = new Date(isoString);
-    const day = d.getDate();
-    const month = d.toLocaleString("en-US", { month: "short" });
-    const time = d.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    }).toLowerCase();
-    return `${day} ${month}, ${time}`;
+  // Recalculate filtered total when filters or rows change
+  const updateFilteredTotal = useCallback((api: GridApi<StoredAction>) => {
+    let total = 0;
+    api.forEachNodeAfterFilter((node) => {
+      if (node.data && typeof node.data.amount === "number") {
+        total += node.data.amount;
+      }
+    });
+    setFilteredTotal(total);
+  }, []);
+
+  const onGridReady = (params: GridReadyEvent<StoredAction>) => {
+    gridApiRef.current = params.api;
+    updateFilteredTotal(params.api);
   };
+
+  const onFilterChanged = (params: FilterChangedEvent<StoredAction>) => {
+    updateFilteredTotal(params.api);
+  };
+
+  // Keep total in sync when raw actions change
+  useEffect(() => {
+    if (gridApiRef.current) {
+      updateFilteredTotal(gridApiRef.current);
+    } else {
+      setFilteredTotal(
+        actions.reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+      );
+    }
+  }, [actions, updateFilteredTotal]);
+
+  // Apply or update filter spec into AG Grid
+  const applySpecToGrid = useCallback((spec: FilterSpec | null) => {
+    setActiveSpec(spec);
+    if (!gridApiRef.current) return;
+
+    if (!spec) {
+      gridApiRef.current.setFilterModel(null);
+      return;
+    }
+
+    const agModel = filterSpecToAgGridModel(spec);
+    gridApiRef.current.setFilterModel(agModel);
+  }, []);
+
+  // Ask your ledger submit handler
+  const handleAskSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const query = askInput.trim();
+    if (!query) return;
+
+    setIsAsking(true);
+    setAskError(null);
+
+    try {
+      const res = await fetch("/api/ledger/query", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question: query }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Could not read that, try rephrasing");
+      }
+
+      const data: LedgerQueryResult = await res.json();
+      if (data.kind === "refusal") {
+        setAskError(data.reason || "Could not read that, try rephrasing");
+      } else if (data.kind === "error") {
+        setAskError("Could not read that, try rephrasing");
+      } else if (data.kind === "filter") {
+        applySpecToGrid(data.spec);
+        setAskInput("");
+      }
+    } catch {
+      setAskError("Could not read that, try rephrasing");
+    } finally {
+      setIsAsking(false);
+    }
+  };
+
+  // Clear all structured AI filters
+  const handleClearFilters = () => {
+    applySpecToGrid(null);
+    setAskError(null);
+  };
+
+  // Remove a single active filter chip
+  const handleRemoveChip = (key: keyof FilterSpec) => {
+    if (!activeSpec) return;
+    const nextSpec: FilterSpec = { ...activeSpec };
+
+    if (key === "amountMin" || key === "amountMax") {
+      delete nextSpec.amountMin;
+      delete nextSpec.amountMax;
+    } else if (key === "dateFrom" || key === "dateTo") {
+      delete nextSpec.dateFrom;
+      delete nextSpec.dateTo;
+    } else if (key === "source" || key === "agentNameContains") {
+      delete nextSpec.source;
+      delete nextSpec.agentNameContains;
+    } else {
+      delete nextSpec[key];
+    }
+
+    const remainingKeys = Object.keys(nextSpec) as Array<keyof FilterSpec>;
+    if (remainingKeys.length === 0) {
+      applySpecToGrid(null);
+    } else {
+      applySpecToGrid(nextSpec);
+    }
+  };
+
+  // Export filtered CSV using Community CsvExportModule
+  const handleExportCsv = () => {
+    if (!gridApiRef.current) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    gridApiRef.current.exportDataAsCsv({
+      fileName: `leash-activity-${todayStr}.csv`,
+      columnKeys: ["createdAt", "type", "source", "recipient", "amount", "status"],
+    });
+  };
+
+  // Active filter chips
+  const activeChips: FilterChip[] = useMemo(() => {
+    if (!activeSpec) return [];
+    return getFilterChips(activeSpec);
+  }, [activeSpec]);
 
   const renderTypeCell = (type: string) => {
     if (type === "send_invoice") {
@@ -154,6 +305,8 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
           <svg className="w-3.5 h-3.5 text-[var(--color-ink-muted)] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
             <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
           </svg>
           <span>Invoice</span>
         </span>
@@ -193,7 +346,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
           return formatCompactTime(params.value);
         },
         cellClass: "tabular-nums text-[13px] text-[var(--color-ink-muted)] flex items-center whitespace-nowrap",
-        filter: false,
+        filter: "agDateColumnFilter",
         suppressHeaderMenuButton: true,
       },
       {
@@ -231,8 +384,17 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
         headerName: "Request",
         flex: 1,
         minWidth: 260,
-        cellRenderer: (params: { data?: StoredAction }) => {
+        cellRenderer: (params: { data?: StoredAction & { isPinnedTotal?: boolean } }) => {
           if (!params.data) return null;
+          if (params.data.isPinnedTotal) {
+            return (
+              <div className="flex items-center h-full">
+                <span className="font-semibold text-xs tracking-wide uppercase text-[var(--color-ink-muted)]">
+                  Totals (filtered)
+                </span>
+              </div>
+            );
+          }
           return (
             <div className="flex flex-col justify-center h-full py-1 overflow-hidden" title={params.data.recipient}>
               <span className="truncate text-[15px] font-medium text-[var(--color-ink)] leading-snug">
@@ -251,16 +413,17 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
         field: "amount",
         headerName: "Amount",
         width: 120,
-        cellRenderer: (params: { value?: number }) => {
+        cellRenderer: (params: { value?: number; data?: StoredAction & { isPinnedTotal?: boolean } }) => {
           if (params.value === undefined || params.value === null) return "";
           const amt = Number(params.value);
           const formatted = amt.toLocaleString("en-US", {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
           });
+          const isTotal = params.data?.isPinnedTotal;
           return (
             <div className="flex items-center justify-end w-full h-full">
-              <span className="tabular-nums font-serif text-[20px] font-medium text-[var(--color-ink)]">
+              <span className={`tabular-nums font-serif text-[20px] font-medium text-[var(--color-ink)] ${isTotal ? "font-semibold" : ""}`}>
                 <span className="text-[var(--color-ink-muted)] font-normal text-base mr-[1px]">$</span>
                 {formatted}
               </span>
@@ -277,8 +440,8 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
         width: 130,
         filter: "agTextColumnFilter",
         suppressHeaderMenuButton: true,
-        cellRenderer: (params: { data?: StoredAction }) => {
-          if (!params.data) return null;
+        cellRenderer: (params: { data?: StoredAction & { isPinnedTotal?: boolean } }) => {
+          if (!params.data || params.data.isPinnedTotal) return null;
           return (
             <div className="flex items-center h-full">
               <StatusBadge status={params.data.status} paypalStatus={params.data.paypalStatus} />
@@ -290,63 +453,86 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
   }, []);
 
   const onRowClicked = (event: RowClickedEvent<StoredAction>) => {
-    if (event.data) {
+    if (event.data && !(event.data as unknown as { isPinnedTotal?: boolean }).isPinnedTotal) {
       setSelectedAction(event.data);
     }
   };
 
+  // Pinned bottom row for filtered total
+  const pinnedBottomRowData = useMemo(() => {
+    return [
+      {
+        isPinnedTotal: true,
+        amount: filteredTotal,
+        recipient: "Totals (filtered)",
+        status: "" as StoredAction["status"],
+        type: "send_payout" as StoredAction["type"],
+        currency: "USD",
+        createdAt: "",
+        id: "pinned-bottom-total",
+        description: "",
+        reference: null,
+        decision: "approve" as const,
+        reason: "",
+        ruleFired: "",
+      },
+    ];
+  }, [filteredTotal]);
+
   // Determine timeline steps for drawer
   const timelineSteps = useMemo(() => {
     if (!selectedAction) return [];
-
-    const isBlocked = selectedAction.status === "blocked";
-    const isRejected = selectedAction.status === "rejected";
-    const isPendingApproval = selectedAction.status === "pending_approval";
+    const isApproved = selectedAction.status === "approved";
+    const isExecuting = selectedAction.status === "executing";
+    const isCompleted = selectedAction.status === "completed";
     const isFailed = selectedAction.status === "failed";
+    const isPending = selectedAction.status === "pending_approval";
+    const isRejected = selectedAction.status === "rejected";
+    const isBlocked = selectedAction.status === "blocked";
+
     const hasPaypalId = Boolean(selectedAction.paypalId);
-    const paypalStatus = (selectedAction.paypalStatus ?? "").toUpperCase();
-    const isSettled =
-      paypalStatus === "SUCCESS" ||
-      paypalStatus === "PAID" ||
-      paypalStatus === "COMPLETED";
-    const isSettling =
-      paypalStatus === "PENDING" || paypalStatus === "SENT";
+    const paypalStatus = selectedAction.paypalStatus || "PENDING";
+    const isSettled = isCompleted && (paypalStatus === "SUCCESS" || paypalStatus === "PAID" || paypalStatus === "COMPLETED");
+    const isSettling = isCompleted && !isSettled;
 
     // Step 1: Requested
     const step1 = {
       label: "Requested",
       state: "done" as const,
-      detail: formatCompactTime(selectedAction.createdAt),
+      detail: selectedAction.createdAt ? formatCompactTime(selectedAction.createdAt) : "Received",
     };
 
-    // Step 2: Decision
+    // Step 2: Policy decision
     let step2State: "done" | "current" | "not_reached" | "failed" = "done";
-    let step2Detail = `${selectedAction.decision} • ${selectedAction.reason}`;
-    if (isPendingApproval) {
+    let step2Detail = `${selectedAction.decision.toUpperCase()} (${selectedAction.ruleFired})`;
+    if (isPending) {
       step2State = "current";
-      step2Detail = "Waiting for your approval";
+      step2Detail = "Waiting for human approval";
     } else if (isBlocked || isRejected) {
       step2State = "failed";
-      step2Detail = isBlocked ? "Blocked by policy" : "Rejected by you";
+      step2Detail = isBlocked ? `Blocked (${selectedAction.ruleFired})` : "Rejected by human administrator";
     }
     const step2 = {
-      label: "Decision",
+      label: "Policy check",
       state: step2State,
       detail: step2Detail,
     };
 
-    // Step 3: Sent to PayPal
+    // Step 3: Execution
     let step3State: "done" | "current" | "not_reached" | "failed" = "not_reached";
-    let step3Detail = selectedAction.paypalId || "Not submitted";
-    if (isBlocked || isRejected) {
-      step3State = "not_reached";
-      step3Detail = "Skipped";
-    } else if (hasPaypalId) {
-      step3State = "done";
-      step3Detail = `ID: ${selectedAction.paypalId}`;
-    } else if (selectedAction.status === "executing") {
+    let step3Detail = "Pending";
+    if (isApproved) {
       step3State = "current";
-      step3Detail = "In progress";
+      step3Detail = "Queued for execution";
+    } else if (isExecuting) {
+      step3State = "current";
+      step3Detail = "Executing via PayPal...";
+    } else if (isCompleted) {
+      step3State = "done";
+      step3Detail = selectedAction.paypalId ? `PayPal ID: ${selectedAction.paypalId}` : "Executed";
+    } else if (isFailed && hasPaypalId) {
+      step3State = "failed";
+      step3Detail = selectedAction.errorMessage || `PayPal Error (${selectedAction.paypalId})`;
     } else if (isFailed && !hasPaypalId) {
       step3State = "failed";
       step3Detail = selectedAction.errorMessage || "Submission failed";
@@ -397,13 +583,22 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
           )}
         </div>
 
-        <div className="flex items-center gap-4">
-          <span className="hidden md:inline text-[13px] text-[var(--color-ink-muted)]">
-            Every request, decision and payment.
-          </span>
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Export CSV button */}
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            className="h-8 px-2.5 rounded-[var(--radius-control)] bg-[var(--color-page)] hover:bg-[var(--color-line)] text-xs font-medium text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] border border-[var(--color-line)] transition-btn cursor-pointer inline-flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)]"
+            title="Export filtered transactions to CSV"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>Export CSV</span>
+          </button>
 
           {/* Quick filter search */}
-          <div className="relative w-full sm:w-56">
+          <div className="relative w-44 sm:w-48">
             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-ink-muted)] pointer-events-none">
               <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="11" cy="11" r="8" />
@@ -414,13 +609,94 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
               type="text"
               value={quickFilterText}
               onChange={(e) => setQuickFilterText(e.target.value)}
-              placeholder="Search ledger..."
+              placeholder="Search..."
               aria-label="Quick search ledger"
               className="w-full h-8 pl-8 pr-3 text-[13px] text-[var(--color-ink)] placeholder-[var(--color-ink-muted)] bg-[var(--color-page)] border border-[var(--color-line)] rounded-[var(--radius-control)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)]"
             />
           </div>
+
+          {/* Ask your ledger form */}
+          <form onSubmit={handleAskSubmit} className="flex items-center gap-1.5">
+            <input
+              type="text"
+              value={askInput}
+              onChange={(e) => {
+                setAskInput(e.target.value);
+                if (askError) setAskError(null);
+              }}
+              placeholder="Ask ledger e.g. blocked over $1k..."
+              aria-label="Ask ledger with AI natural language query"
+              maxLength={300}
+              disabled={isAsking}
+              className="w-48 sm:w-56 h-8 px-2.5 text-[13px] text-[var(--color-ink)] placeholder-[var(--color-ink-muted)] bg-[var(--color-page)] border border-[var(--color-line)] rounded-[var(--radius-control)] focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)] disabled:opacity-50"
+            />
+            <button
+              type="submit"
+              disabled={isAsking || !askInput.trim()}
+              className="h-8 px-3 rounded-[var(--radius-control)] bg-[var(--color-brand)] hover:bg-[var(--color-brand-hover)] text-white text-xs font-medium transition-btn cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1 shrink-0 focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)]"
+            >
+              {isAsking ? (
+                <>
+                  <svg className="animate-spin w-3 h-3 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                  </svg>
+                  <span>Asking...</span>
+                </>
+              ) : (
+                <span>Ask</span>
+              )}
+            </button>
+          </form>
         </div>
       </div>
+
+      {/* Ask Error Message */}
+      {askError && (
+        <div className="fade-in-verdict text-xs text-[var(--color-stop)] bg-[var(--color-stop-tint)] border border-[var(--color-stop)]/20 px-3 py-1.5 rounded-[var(--radius-control)] flex items-center justify-between">
+          <span>{askError}</span>
+          <button
+            type="button"
+            onClick={() => setAskError(null)}
+            className="text-[var(--color-stop)] hover:underline ml-2 cursor-pointer font-medium"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Active Filter Chips Bar */}
+      {activeChips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink-muted)]">
+            Active Filters:
+          </span>
+          {activeChips.map((chip) => (
+            <span
+              key={chip.id}
+              className="inline-flex items-center gap-1.5 text-xs bg-[var(--color-page)] border border-[var(--color-line)] text-[var(--color-ink)] px-2.5 py-1 rounded-full"
+            >
+              <span>{chip.label}</span>
+              <button
+                type="button"
+                onClick={() => handleRemoveChip(chip.key)}
+                className="w-3.5 h-3.5 rounded-full hover:bg-[var(--color-line-strong)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] flex items-center justify-center transition-colors cursor-pointer"
+                title={`Remove ${chip.label}`}
+                aria-label={`Remove filter ${chip.label}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          <button
+            type="button"
+            onClick={handleClearFilters}
+            className="text-xs text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] underline underline-offset-2 ml-1 cursor-pointer transition-colors"
+          >
+            Clear all
+          </button>
+        </div>
+      )}
 
       {/* Pending band: for each pending_approval action, full-width row with row-tint & row-border */}
       {pendingActions.length > 0 ? (
@@ -511,7 +787,10 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
           rowData={actions}
           columnDefs={columnDefs}
           quickFilterText={quickFilterText}
+          pinnedBottomRowData={pinnedBottomRowData}
           onRowClicked={onRowClicked}
+          onGridReady={onGridReady}
+          onFilterChanged={onFilterChanged}
           rowSelection={{
             mode: "singleRow",
             checkboxes: false,
@@ -592,44 +871,40 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
                 <div className="absolute left-2.5 top-2 bottom-2 w-[1px] bg-[var(--color-line)]" />
 
                 {timelineSteps.map((step, idx) => {
-                  let textColor = "text-[var(--color-ink)]";
-
-                  if (step.state === "current") {
-                    textColor = "text-[var(--color-live)]";
+                  let circleClasses = "border-[var(--color-line)] bg-white";
+                  let labelClasses = "text-[var(--color-ink-muted)]";
+                  if (step.state === "done") {
+                    circleClasses = "bg-[var(--color-brand)] border-[var(--color-brand)] text-white";
+                    labelClasses = "text-[var(--color-ink)] font-medium";
+                  } else if (step.state === "current") {
+                    circleClasses = "bg-white border-2 border-[var(--color-brand)]";
+                    labelClasses = "text-[var(--color-ink)] font-medium";
                   } else if (step.state === "failed") {
-                    textColor = "text-[var(--color-stop)]";
-                  } else if (step.state === "not_reached") {
-                    textColor = "text-[var(--color-ink-muted)]";
+                    circleClasses = "bg-[var(--color-stop)] border-[var(--color-stop)] text-white";
+                    labelClasses = "text-[var(--color-stop)] font-medium";
                   }
 
                   return (
                     <div key={idx} className="relative flex items-start gap-3">
-                      <span
-                        className={`absolute -left-6 mt-0.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-semibold ${
-                          step.state === "done"
-                            ? "bg-[var(--color-ok-solid)] text-white"
-                            : step.state === "failed"
-                            ? "bg-[var(--color-stop-solid)] text-white"
-                            : step.state === "current"
-                            ? "bg-[var(--color-live-solid)] text-white pulse-live"
-                            : "bg-[var(--color-surface)] border border-[var(--color-line)] text-[var(--color-ink-muted)]"
-                        }`}
-                      >
-                        {idx + 1}
-                      </span>
+                      <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 z-10 transition-colors ${circleClasses}`}>
+                        {step.state === "done" && (
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                        {step.state === "current" && (
+                          <div className="w-2 h-2 rounded-full bg-[var(--color-brand)] animate-pulse" />
+                        )}
+                        {step.state === "failed" && (
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        )}
+                      </div>
 
-                      <div className="text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className={`font-medium ${textColor}`}>{step.label}</span>
-                          {step.state === "current" && (
-                            <span className="text-[11px] text-[var(--color-live)] font-normal">
-                              (In progress)
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-[var(--color-ink-muted)] mt-0.5">
-                          {step.detail}
-                        </div>
+                      <div className="text-xs space-y-0.5">
+                        <div className={labelClasses}>{step.label}</div>
+                        <div className="text-[11px] text-[var(--color-ink-muted)]">{step.detail}</div>
                       </div>
                     </div>
                   );
@@ -693,45 +968,13 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
 
                 {selectedAction.errorMessage && (
                   <div>
-                    <dt className="text-[11px] text-[var(--color-stop)]">Error</dt>
+                    <dt className="text-[11px] text-[var(--color-stop)] font-medium">Error details</dt>
                     <dd className="text-[var(--color-stop)] mt-0.5">
                       {selectedAction.errorMessage}
                     </dd>
                   </div>
                 )}
               </dl>
-
-              {/* Refresh status button as a brand outline button */}
-              {selectedAction.paypalId && selectedAction.status === "completed" && (
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    disabled={isRefreshing}
-                    onClick={async () => {
-                      setIsRefreshing(true);
-                      try {
-                        const res = await fetch(`/api/actions/${selectedAction.id}/refresh`, {
-                          method: "POST",
-                        });
-                        if (res.ok) {
-                          const updated = (await res.json()) as StoredAction;
-                          setSelectedAction(updated);
-                          if (onRefresh) {
-                            await onRefresh();
-                          }
-                        }
-                      } catch (err) {
-                        console.error("Failed to refresh action status:", err);
-                      } finally {
-                        setIsRefreshing(false);
-                      }
-                    }}
-                    className="h-9 px-3.5 rounded-[var(--radius-control)] border border-[var(--color-brand)] text-[var(--color-brand)] hover:bg-[var(--color-brand-tint)] text-xs font-medium transition-btn cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)] inline-flex items-center"
-                  >
-                    {isRefreshing ? "Refreshing..." : "Refresh status"}
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         </>

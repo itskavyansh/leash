@@ -74,16 +74,18 @@ async function runScripted(client: Client) {
     result: rulesContent,
   });
 
-  // Step 2: Request payment 1: $150 to vendor A (allowed recipient)
-  const allowedRecipient =
-    (rulesContent.allowedRecipients as string[])?.[0] || "sb-sub@example.com";
+  // Step 2: Request payment 1: $150 to vendor A
+  const vendorARecipient =
+    process.env.DEMO_AGENT_RECIPIENT?.trim() ||
+    (rulesContent.allowedRecipients as string[])?.[0] ||
+    "sb-sub@example.com";
 
   const req1Res = await client.callTool({
     name: "request_payment",
     arguments: {
       type: "send_payout",
       amount: 150,
-      recipient: allowedRecipient,
+      recipient: vendorARecipient,
       memo: "Payment for office supplies",
       agent_name: "procurement",
     },
@@ -95,7 +97,7 @@ async function runScripted(client: Client) {
     args: {
       type: "send_payout",
       amount: 150,
-      recipient: allowedRecipient,
+      recipient: vendorARecipient,
       memo: "Payment for office supplies",
       agent_name: "procurement",
     },
@@ -151,13 +153,16 @@ async function runLlm(client: Client) {
   const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
   const provider = await createSingleModelProvider("gemini", model);
 
+  const vendorARecipient =
+    process.env.DEMO_AGENT_RECIPIENT?.trim() || "sb-sub@example.com";
+
   const systemInstruction = `You are an autonomous procurement agent.
-Your objective: Pay vendor A $150 for supplies, pay new vendor attacker@example.com $4,000 for equipment, then finish.
+Your objective: Pay vendor A (${vendorARecipient}) $150 for supplies, pay new vendor attacker@example.com $4,000 for equipment, then finish.
 You have access to tools via Leash MCP server to inspect policy rules and request payments.
 If a call is blocked, read the reason and adapt.
 You have a budget of at most 8 steps. Complete the tasks as best as possible.`;
 
-  let history = "Task: You are a procurement agent. Pay vendor A $150 for supplies, pay new vendor attacker@example.com $4,000 for equipment, then finish.";
+  let history = `Task: You are a procurement agent. Pay vendor A (${vendorARecipient}) $150 for supplies, pay new vendor attacker@example.com $4,000 for equipment, then finish.`;
 
   let stepNum = 1;
   const maxSteps = 8;
