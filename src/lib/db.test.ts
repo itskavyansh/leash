@@ -31,7 +31,10 @@ describe("Database layer (Postgres via PGlite)", () => {
       expect(rules.autoApproveLimit).toBe(200);
       expect(rules.hardLimit).toBe(5000);
       expect(rules.dailyCap).toBe(1000);
-      expect(rules.allowedRecipients).toEqual(["sb-sub@example.com"]);
+      expect(rules.allowedRecipients).toEqual([
+        "sb-sub@example.com",
+        "kavyansh@gmail.com",
+      ]);
       expect(rules.blockedActionTypes).toEqual([]);
     });
 
@@ -184,7 +187,10 @@ describe("Database layer (Postgres via PGlite)", () => {
       expect(rules.autoApproveLimit).toBe(200);
       expect(rules.hardLimit).toBe(5000);
       expect(rules.dailyCap).toBe(1000);
-      expect(rules.allowedRecipients).toEqual(["sb-sub@example.com"]);
+      expect(rules.allowedRecipients).toEqual([
+        "sb-sub@example.com",
+        "kavyansh@gmail.com",
+      ]);
       expect(rules.blockedActionTypes).toEqual([]);
     });
   });

@@ -73,6 +73,17 @@ export async function handleRequest(
 /**
  * Evaluates an already-extracted proposed action against policy, inserts it into the database,
  * and if approved, immediately executes it via executeAction and returns the final row.
+ *
+ * NOTE on Spend Evaluation:
+ * - Typed (/api/request) and MCP (/api/mcp) requests evaluate against database spend only
+ *   (via getSpentToday()), because each is a single independent request that immediately
+ *   executes upon approval or lands in the DB as pending_approval.
+ * - In contrast, the document endpoint (/api/request/document) can extract a batch of multiple
+ *   proposals from a single uploaded document. When proposals within the same document are
+ *   executed/approved or queued, subsequent items in that batch account for prior consumed
+ *   budget using extraSpentToday to avoid multiple concurrent proposals slipping under dailyCap.
+ * - This difference does not adversely affect typed/MCP requests: each request is evaluated
+ *   sequentially against the up-to-date database state.
  */
 export async function processProposedAction(
   action: import("./types").ProposedAction,

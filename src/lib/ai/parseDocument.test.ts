@@ -446,5 +446,59 @@ describe("Document Input and Policy Integration", () => {
 
       spy.mockRestore();
     });
+
+    it("does not let earlier pending proposal push a subsequent small auto-approvable proposal into asks you if dailyCap not crossed", async () => {
+      // Test case: proposal 1 is $300 (exceeds $200 auto-limit, so goes to pending_approval).
+      // Proposal 2 is $100 (which is <= $200 auto-limit).
+      // Total projected spend = 300 + 100 = $400, which is well below the $1000 dailyCap.
+      // Proposal 2 should NOT be pushed into 'needs_approval' by proposal 1; it should be 'approve' / 'completed'.
+      const spy = vi.spyOn(mockAi, "parseDocument").mockResolvedValueOnce({
+        kind: "actions",
+        proposals: [
+          {
+            action: {
+              type: "send_payout",
+              amount: 300,
+              currency: "USD",
+              recipient: "sb-sub@example.com",
+              description: "Pending item $300",
+            },
+          },
+          {
+            action: {
+              type: "send_payout",
+              amount: 100,
+              currency: "USD",
+              recipient: "sb-sub@example.com",
+              description: "Small item $100",
+            },
+          },
+        ],
+      });
+
+      const req = new Request("http://localhost/api/request/document", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "One $300, one $100" }),
+      });
+
+      const res = await documentPost(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+
+      expect(json.proposalsCount).toBe(2);
+
+      // Proposal 1 ($300): needs_approval via auto_limit
+      expect(json.results[0].action.decision).toBe("needs_approval");
+      expect(json.results[0].action.status).toBe("pending_approval");
+      expect(json.results[0].action.ruleFired).toBe("auto_limit");
+
+      // Proposal 2 ($100): 300 + 100 = 400 <= 1000 dailyCap, and 100 <= 200 autoApproveLimit.
+      // MUST be approved (sends itself / within_limits), NOT asks you!
+      expect(json.results[1].action.decision).toBe("approve");
+      expect(json.results[1].action.ruleFired).toBe("within_limits");
+
+      spy.mockRestore();
+    });
   });
 });

@@ -33,5 +33,7 @@ services:
         sync: false
       - key: LEASH_MCP_TOKEN
         sync: false
+      - key: DEFAULT_ALLOWED_RECIPIENTS
+        sync: false
       # Note: WEBHOOK_SKIP_VERIFY is intentionally omitted in production.
       # When deployed to production, PayPal webhook signatures must be verified.

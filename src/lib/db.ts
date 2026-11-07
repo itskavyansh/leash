@@ -1,9 +1,11 @@
 import { Pool, PoolConfig } from "pg";
 import { randomUUID } from "crypto";
 import { ActionStatus, ActionType, Decision, Rules, StoredAction } from "./types";
+import { getDefaultRules, getDefaultAllowedRecipients } from "./defaultRules";
 
 export type ActionRecord = StoredAction;
 export type { StoredAction };
+export { getDefaultRules, getDefaultAllowedRecipients };
 
 export interface InsertActionInput {
   id?: string;
@@ -47,13 +49,7 @@ interface RulesDbRow {
   blockedActionTypes: string;
 }
 
-export const DEFAULT_RULES: Rules = {
-  autoApproveLimit: 200,
-  hardLimit: 5000,
-  dailyCap: 1000,
-  allowedRecipients: ["sb-sub@example.com"],
-  blockedActionTypes: [],
-};
+export const DEFAULT_RULES: Rules = getDefaultRules();
 
 declare global {
   var __leashPgPool: Pool | undefined;
@@ -161,6 +157,7 @@ export async function ensureSchema(): Promise<void> {
     await client.query(`ALTER TABLE processed_events ENABLE ROW LEVEL SECURITY;`);
 
     // 3. Seed default rules if id = 1 doesn't exist
+    const defaults = getDefaultRules();
     await client.query(
       `
       INSERT INTO rules (
@@ -169,11 +166,11 @@ export async function ensureSchema(): Promise<void> {
       ON CONFLICT (id) DO NOTHING;
     `,
       [
-        DEFAULT_RULES.autoApproveLimit,
-        DEFAULT_RULES.hardLimit,
-        DEFAULT_RULES.dailyCap,
-        JSON.stringify(DEFAULT_RULES.allowedRecipients),
-        JSON.stringify(DEFAULT_RULES.blockedActionTypes),
+        defaults.autoApproveLimit,
+        defaults.hardLimit,
+        defaults.dailyCap,
+        JSON.stringify(defaults.allowedRecipients),
+        JSON.stringify(defaults.blockedActionTypes),
       ]
     );
   })();
@@ -198,7 +195,7 @@ export async function getRules(): Promise<Rules> {
     `SELECT * FROM rules WHERE id = 1 LIMIT 1`
   );
   if (res.rows.length === 0) {
-    return { ...DEFAULT_RULES };
+    return getDefaultRules();
   }
   return parseRules(res.rows[0]);
 }
@@ -400,6 +397,7 @@ export async function recordProcessedEvent(eventId: string): Promise<void> {
 export async function resetAll(): Promise<void> {
   await ensureSchema();
   const client = getSqlClient();
+  const defaults = getDefaultRules();
   await client.query("BEGIN;");
   try {
     await client.query("DELETE FROM actions;");
@@ -416,11 +414,11 @@ export async function resetAll(): Promise<void> {
         "blockedActionTypes" = EXCLUDED."blockedActionTypes";
     `,
       [
-        DEFAULT_RULES.autoApproveLimit,
-        DEFAULT_RULES.hardLimit,
-        DEFAULT_RULES.dailyCap,
-        JSON.stringify(DEFAULT_RULES.allowedRecipients),
-        JSON.stringify(DEFAULT_RULES.blockedActionTypes),
+        defaults.autoApproveLimit,
+        defaults.hardLimit,
+        defaults.dailyCap,
+        JSON.stringify(defaults.allowedRecipients),
+        JSON.stringify(defaults.blockedActionTypes),
       ]
     );
     await client.query("COMMIT;");
