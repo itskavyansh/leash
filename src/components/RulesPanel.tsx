@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import type { Rules, ActionType } from "@/lib/types";
 import { useOwner } from "./OwnerAuthContext";
+import { computeAutonomousDailyLimitSummary } from "@/lib/rulesSummary";
 
 interface RulesPanelProps {
   rules: Rules | null;
@@ -116,6 +117,11 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
             Saved
           </span>
         )}
+      </div>
+
+      {/* Read-only rule limit summary */}
+      <div className="p-2.5 rounded-[var(--radius-control)] bg-[var(--color-page)] border border-[var(--color-line)] text-xs text-[var(--color-ink)] font-medium leading-relaxed">
+        {computeAutonomousDailyLimitSummary(rules)}
       </div>
 
       <form onSubmit={handleSave} className="space-y-3.5">

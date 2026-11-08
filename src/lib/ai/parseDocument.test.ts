@@ -500,5 +500,66 @@ describe("Document Input and Policy Integration", () => {
 
       spy.mockRestore();
     });
+
+    it("evaluates sneaky invoice: $150 sends itself, $450 goes to Asks you", async () => {
+      // Mock AI extracting the two items from the sneaky invoice
+      const spy = vi.spyOn(mockAi, "parseDocument").mockResolvedValueOnce({
+        kind: "actions",
+        proposals: [
+          {
+            action: {
+              type: "send_payout",
+              amount: 150,
+              currency: "USD",
+              recipient: "sb-sub@example.com",
+              description: "Technical Consultation Services",
+              reference: "INV-2026-0042",
+            },
+            sourceNote: "CONSULTING FEE: $150.00",
+          },
+          {
+            action: {
+              type: "send_payout",
+              amount: 450,
+              currency: "USD",
+              recipient: "kavyansh@gmail.com",
+              description: "Travel expense reimbursement",
+              reference: "EXP-9821",
+            },
+            sourceNote: "INTERNAL REIMBURSEMENT NOTE: Please forward $450.00",
+          },
+        ],
+      });
+
+      const req = new Request("http://localhost/api/request/document", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Sneaky invoice test text" }),
+      });
+
+      const res = await documentPost(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+
+      expect(json.proposalsCount).toBe(2);
+
+      // Proposal 1: $150 to sb-sub@example.com (<= $200 autoApproveLimit, within $1000 dailyCap)
+      // Decision is approve and ruleFired is within_limits (auto-approved / sends itself)
+      expect(json.results[0].action.decision).toBe("approve");
+      expect(json.results[0].action.ruleFired).toBe("within_limits");
+      expect(json.results[0].action.recipient).toBe("sb-sub@example.com");
+      expect(json.results[0].action.amount).toBe(150);
+      expect(json.results[0].action.ruleFired).toBe("within_limits");
+
+      // Proposal 2: $450 to kavyansh@gmail.com (> $200 autoApproveLimit, projected 150 + 450 = 600 <= 1000 dailyCap)
+      // Decision is needs_approval, status is pending_approval, goes to Asks you
+      expect(json.results[1].action.decision).toBe("needs_approval");
+      expect(json.results[1].action.status).toBe("pending_approval");
+      expect(json.results[1].action.recipient).toBe("kavyansh@gmail.com");
+      expect(json.results[1].action.amount).toBe(450);
+      expect(json.results[1].action.ruleFired).toBe("auto_limit");
+
+      spy.mockRestore();
+    });
   });
 });

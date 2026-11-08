@@ -67,6 +67,22 @@ flowchart LR
 
 ---
 
+## Threat Model
+
+The AI model reading typed prompts or documents is treated as an untrusted interpreter. The system assumes the AI can be fooled. Security boundaries are enforced by deterministic TypeScript policy code and mandatory human authorization.
+
+| What an Attacker Tries | What Stops It | Honest Residual Risk |
+| :--- | :--- | :--- |
+| **Unknown recipient**: Prompt injection or invoice text directs funds to an unauthorized address. | `recipient_not_allowed` rule blocks the payment immediately. Policy evaluates recipient email against the explicit allowlist before execution. | An attacker who gains control over an already-allowed recipient address or convinces an owner to add one. |
+| **Oversize amount**: An agent or manipulated invoice requests an amount far above normal bounds. | `hard_limit` rule blocks any transaction exceeding the absolute ceiling. Amounts above `autoApproveLimit` are sent to human approval. | If the owner configures an excessively high auto-approve or hard limit, high-value payments up to that limit execute without friction. |
+| **Many small payments**: Attacker splits a large theft into multiple transactions under the auto-approve threshold. | `daily_cap` rule tracks total accumulated spend across executed and pending payments today. When projected spend crosses the cap, transactions require human review. | The attacker can consume the remaining autonomous daily budget up to the cap before being stopped, exhausting the daily allowance on low-value items. |
+| **Injected payment to an allowed recipient**: An invoice includes hidden instructions or notes telling the agent to pay an authorized vendor extra fees. | When the injected amount puts the payment above `autoApproveLimit` ($200 by default), it is diverted to the approval inbox. Daily cap bounds cumulative autonomous exposure. | If the injected amount falls below the auto-approve threshold and the daily cap has headroom, the autonomous payment will execute without human review. |
+| **Tricking the approver**: Attacker embeds deceptive memos, urgent appeals, or executive impersonation in the document to mislead the human reviewer. | The AI approval brief is generated strictly from verified historical facts (first-time payment, payment counts, transaction averages, projected spend). Free-text memos and agent names are stripped from the brief prompt. | A human approver who rubber-stamps pending inbox requests without inspecting the item details or verifying external context. |
+
+---
+
+---
+
 ## Tools Used
 
 - **PayPal APIs**: Integrates with PayPal REST endpoints including OAuth2 token creation (`/v1/oauth2/token`), Invoicing v2 draft creation and sending (`/v2/invoicing/invoices`, `/send`), Payouts v1 batch creation (`/v1/payments/payouts`), Captures v2 refunds (`/v2/payments/captures/{id}/refund`), status reconciliation (`/v1/payments/payouts/{id}`, `/v2/invoicing/invoices/{id}`, `/v2/payments/refunds/{id}`), and Webhook signature verification (`/v1/notifications/verify-webhook-signature`).

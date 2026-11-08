@@ -2,7 +2,7 @@ import React, { useState, useRef } from "react";
 import type { ParseResult } from "@/lib/ai/parse";
 import type { StoredAction, Decision } from "@/lib/types";
 import { getDisplayStatus } from "./statusHelper";
-import { SAMPLE_CLEAN_INVOICE, SAMPLE_TRICKY_INVOICE } from "@/lib/samples";
+import { SAMPLE_CLEAN_INVOICE, SAMPLE_TRICKY_INVOICE, SAMPLE_SNEAKY_INVOICE } from "@/lib/samples";
 import type { DocumentResponsePayload, DocumentItemResult } from "@/app/api/request/document/route";
 import { getRuleLabel } from "@/lib/ruleLabels";
 
@@ -45,7 +45,7 @@ export const RequestBox: React.FC<RequestBoxProps> = ({
   onRequestComplete,
   onResult,
 }) => {
-  const [activeTab, setActiveTab] = useState<"type" | "document">("type");
+  const [activeTab, setActiveTab] = useState<"document" | "type">("document");
 
   // Typed tab state
   const [text, setText] = useState("");
@@ -507,19 +507,8 @@ export const RequestBox: React.FC<RequestBoxProps> = ({
 
   return (
     <section className="bg-[var(--color-surface)] border border-[var(--color-line)] rounded-[var(--radius-panel)] p-4">
-      {/* Direction D Hairline Tabs */}
+      {/* Direction D Hairline Tabs: From a document first and default, Type a request second */}
       <div className="flex items-center gap-2 mb-3 border-b border-[var(--color-line-soft)] pb-2">
-        <button
-          type="button"
-          onClick={() => setActiveTab("type")}
-          className={`px-3 py-1 text-sm font-medium rounded-full transition-btn cursor-pointer ${
-            activeTab === "type"
-              ? "bg-[var(--color-brand)] text-white"
-              : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] bg-transparent"
-          }`}
-        >
-          Type a request
-        </button>
         <button
           type="button"
           onClick={() => setActiveTab("document")}
@@ -531,57 +520,20 @@ export const RequestBox: React.FC<RequestBoxProps> = ({
         >
           From a document
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("type")}
+          className={`px-3 py-1 text-sm font-medium rounded-full transition-btn cursor-pointer ${
+            activeTab === "type"
+              ? "bg-[var(--color-brand)] text-white"
+              : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] bg-transparent"
+          }`}
+        >
+          Type a request
+        </button>
       </div>
 
-      {activeTab === "type" ? (
-        <>
-          <form onSubmit={handleTypeSubmit} className="space-y-3">
-            <div className="relative flex items-center">
-              <input
-                id="ai-request-input"
-                type="text"
-                value={text}
-                onChange={(e) => setText(e.target.value.slice(0, 500))}
-                placeholder="Pay Sam $120 for the illustration"
-                className="w-full h-12 text-[17px] text-[var(--color-ink)] placeholder-[var(--color-ink-muted)] bg-transparent pl-1 pr-28 focus:outline-none transition-all"
-                disabled={isLoading}
-                aria-label="Payment instruction"
-              />
-
-              <button
-                type="submit"
-                disabled={isLoading || !text.trim()}
-                className="absolute right-0 h-10 px-6 rounded-[var(--radius-control)] bg-[var(--color-brand)] hover:bg-[var(--color-brand-hover)] text-white text-sm font-medium transition-btn disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)] focus:ring-offset-2 inline-flex items-center justify-center min-w-[76px]"
-              >
-                {isLoading ? "Sending..." : "Send"}
-              </button>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[var(--color-line-soft)]">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {EXAMPLE_CHIPS.map((chip, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => setText(chip.full)}
-                    disabled={isLoading}
-                    className="text-xs text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] bg-transparent hover:bg-[var(--color-page)] border border-[var(--color-line)] rounded-full px-3 py-1 transition-btn cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                    title={chip.full}
-                  >
-                    {chip.short}
-                  </button>
-                ))}
-              </div>
-
-              <span className="text-[11px] tabular-nums text-[var(--color-ink-muted)] ml-auto">
-                {text.length}/500
-              </span>
-            </div>
-          </form>
-
-          {renderTypeResult()}
-        </>
-      ) : (
+      {activeTab === "document" ? (
         <>
           <form onSubmit={handleDocumentSubmit} className="space-y-3">
             <div className="relative">
@@ -670,6 +622,17 @@ export const RequestBox: React.FC<RequestBoxProps> = ({
                 >
                   Try: Tricky invoice
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDocText(SAMPLE_SNEAKY_INVOICE);
+                    removeFile();
+                  }}
+                  disabled={isDocLoading}
+                  className="text-xs text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] bg-transparent hover:bg-[var(--color-page)] border border-[var(--color-line)] rounded-full px-3 py-1 transition-btn cursor-pointer disabled:opacity-40"
+                >
+                  Try: Sneaky invoice
+                </button>
               </div>
             </div>
 
@@ -689,6 +652,54 @@ export const RequestBox: React.FC<RequestBoxProps> = ({
           </form>
 
           {renderDocumentResults()}
+        </>
+      ) : (
+        <>
+          <form onSubmit={handleTypeSubmit} className="space-y-3">
+            <div className="relative flex items-center">
+              <input
+                id="ai-request-input"
+                type="text"
+                value={text}
+                onChange={(e) => setText(e.target.value.slice(0, 500))}
+                placeholder="Pay Sam $120 for the illustration"
+                className="w-full h-12 text-[17px] text-[var(--color-ink)] placeholder-[var(--color-ink-muted)] bg-transparent pl-1 pr-28 focus:outline-none transition-all"
+                disabled={isLoading}
+                aria-label="Payment instruction"
+              />
+
+              <button
+                type="submit"
+                disabled={isLoading || !text.trim()}
+                className="absolute right-0 h-10 px-6 rounded-[var(--radius-control)] bg-[var(--color-brand)] hover:bg-[var(--color-brand-hover)] text-white text-sm font-medium transition-btn disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)] focus:ring-offset-2 inline-flex items-center justify-center min-w-[76px]"
+              >
+                {isLoading ? "Sending..." : "Send"}
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[var(--color-line-soft)]">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {EXAMPLE_CHIPS.map((chip, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setText(chip.full)}
+                    disabled={isLoading}
+                    className="text-xs text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] bg-transparent hover:bg-[var(--color-page)] border border-[var(--color-line)] rounded-full px-3 py-1 transition-btn cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={chip.full}
+                  >
+                    {chip.short}
+                  </button>
+                ))}
+              </div>
+
+              <span className="text-[11px] tabular-nums text-[var(--color-ink-muted)] ml-auto">
+                {text.length}/500
+              </span>
+            </div>
+          </form>
+
+          {renderTypeResult()}
         </>
       )}
     </section>
