@@ -135,7 +135,14 @@ export const Ledger: React.FC<LedgerProps> = ({ actions, onRefresh }) => {
         filter: "agTextColumnFilter",
         cellRenderer: (params: { data?: StoredAction }) => {
           if (!params.data) return null;
-          return <StatusBadge status={params.data.status} paypalStatus={params.data.paypalStatus} />;
+          return (
+            <StatusBadge
+              status={params.data.status}
+              paypalStatus={params.data.paypalStatus}
+              actionType={params.data.type}
+              recipient={params.data.recipient}
+            />
+          );
         },
       },
       {
@@ -330,6 +337,8 @@ export const Ledger: React.FC<LedgerProps> = ({ actions, onRefresh }) => {
                 <StatusBadge
                   status={selectedAction.status}
                   paypalStatus={selectedAction.paypalStatus}
+                  actionType={selectedAction.type}
+                  recipient={selectedAction.recipient}
                 />
               </div>
 

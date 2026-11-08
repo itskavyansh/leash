@@ -116,6 +116,11 @@ flowchart LR
    - `LEASH_MCP_TOKEN` (Bearer token for MCP endpoint authentication)
    - `DEFAULT_ALLOWED_RECIPIENTS` (Optional comma-separated email list appended to default seed rules)
    - `DEMO_AGENT_RECIPIENT` (Optional recipient email for the demo agent script)
+   - `OWNER_PASSCODE` (Passcode to unlock owner operations: approve, reject, edit rules, and reset demo data)
+   - `SESSION_SECRET` (Secret key used to sign HMAC-SHA256 owner session cookies)
+   - `SHOW_DEMO_PASSCODE` (`true` to display the demo passcode in the UI popover for demo convenience)
+
+   > **Note on Owner Authentication**: If `OWNER_PASSCODE` or `SESSION_SECRET` is unset, administrative operations (approving actions, rejecting actions, saving policy rules, and resetting demo data) are disabled and return HTTP 503. Public reads and payment request creation remain active and rate-limited.
 
 3. Run the development server:
    ```bash

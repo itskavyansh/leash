@@ -137,15 +137,31 @@ export function getDisplayStatus(
 export function StatusBadge({
   status,
   paypalStatus,
+  actionType,
+  recipient,
   className = "",
 }: {
   status: ActionStatus | string;
   paypalStatus?: string | null;
+  actionType?: string | null;
+  recipient?: string | null;
   className?: string;
 }) {
   const display = getDisplayStatus(status, paypalStatus);
+  const isSettling = display.label === "Settling";
+  const isExampleRecipient = Boolean(
+    actionType === "send_payout" &&
+    recipient &&
+    /@example\.com$/i.test(recipient.trim())
+  );
+
+  const settlingTooltip = isSettling && isExampleRecipient
+    ? "Sandbox payouts to example.com addresses never settle. Use a real sandbox email."
+    : undefined;
+
   return (
     <span
+      title={settlingTooltip}
       className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${display.tintBgClass} ${display.textClass} ${className}`}
     >
       <span>{display.label}</span>

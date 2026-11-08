@@ -8,6 +8,7 @@ import { POST as resetPost } from "./demo/reset/route";
 import { insertAction, getAction, updateAction, saveRules } from "../../lib/db";
 import { setupTestDb, teardownTestDb } from "../../lib/testDb";
 import { resetRateLimits } from "../../lib/rateLimit";
+import { createOwnerToken, OWNER_COOKIE_NAME } from "../../lib/ownerAuth";
 import * as orchestrator from "../../lib/orchestrator";
 import * as executor from "../../lib/executor";
 import type { ProcessRequestResult } from "../../lib/orchestrator";
@@ -39,7 +40,15 @@ vi.mock("@/lib/executor", async (importOriginal) => {
 });
 
 describe("JSON API Routes", () => {
+  const TEST_SECRET = "test-session-secret-for-api-tests-32chars";
+  const TEST_PASSCODE = "test-owner-pass";
+  let ownerHeaders: { cookie: string };
+
   beforeEach(async () => {
+    process.env.OWNER_PASSCODE = TEST_PASSCODE;
+    process.env.SESSION_SECRET = TEST_SECRET;
+    const token = createOwnerToken(TEST_SECRET);
+    ownerHeaders = { cookie: `${OWNER_COOKIE_NAME}=${token}` };
     await setupTestDb();
     resetRateLimits();
     vi.clearAllMocks();
@@ -47,6 +56,8 @@ describe("JSON API Routes", () => {
 
   afterEach(async () => {
     delete process.env.DEMO_MODE;
+    delete process.env.OWNER_PASSCODE;
+    delete process.env.SESSION_SECRET;
     await teardownTestDb();
   });
 
@@ -232,6 +243,7 @@ describe("JSON API Routes", () => {
     it("returns 404 if action does not exist", async () => {
       const reqApprove = new Request("http://localhost:3000/api/actions/nonexistent/approve", {
         method: "POST",
+        headers: ownerHeaders,
       });
       const resApprove = await approvePost(reqApprove, {
         params: Promise.resolve({ id: "nonexistent" }),
@@ -241,6 +253,7 @@ describe("JSON API Routes", () => {
 
       const reqReject = new Request("http://localhost:3000/api/actions/nonexistent/reject", {
         method: "POST",
+        headers: ownerHeaders,
       });
       const resReject = await rejectPost(reqReject, {
         params: Promise.resolve({ id: "nonexistent" }),
@@ -264,6 +277,7 @@ describe("JSON API Routes", () => {
 
       const reqApprove = new Request(`http://localhost:3000/api/actions/${action.id}/approve`, {
         method: "POST",
+        headers: ownerHeaders,
       });
       const resApprove = await approvePost(reqApprove, {
         params: Promise.resolve({ id: action.id }),
@@ -273,6 +287,7 @@ describe("JSON API Routes", () => {
 
       const reqReject = new Request(`http://localhost:3000/api/actions/${action.id}/reject`, {
         method: "POST",
+        headers: ownerHeaders,
       });
       const resReject = await rejectPost(reqReject, {
         params: Promise.resolve({ id: action.id }),
@@ -296,6 +311,7 @@ describe("JSON API Routes", () => {
 
       const reqApprove = new Request(`http://localhost:3000/api/actions/${action.id}/approve`, {
         method: "POST",
+        headers: ownerHeaders,
       });
       const resApprove = await approvePost(reqApprove, {
         params: Promise.resolve({ id: action.id }),
@@ -323,6 +339,7 @@ describe("JSON API Routes", () => {
 
       const reqReject = new Request(`http://localhost:3000/api/actions/${action.id}/reject`, {
         method: "POST",
+        headers: ownerHeaders,
       });
       const resReject = await rejectPost(reqReject, {
         params: Promise.resolve({ id: action.id }),
@@ -349,7 +366,7 @@ describe("JSON API Routes", () => {
     it("PUT validates rules (fails if autoApproveLimit > hardLimit)", async () => {
       const req = new Request("http://localhost:3000/api/rules", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { ...ownerHeaders, "Content-Type": "application/json" },
         body: JSON.stringify({
           autoApproveLimit: 600,
           hardLimit: 500,
@@ -368,7 +385,7 @@ describe("JSON API Routes", () => {
     it("PUT validates non-negative limits, positive dailyCap, email array, and valid ActionType", async () => {
       const badReq = new Request("http://localhost:3000/api/rules", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { ...ownerHeaders, "Content-Type": "application/json" },
         body: JSON.stringify({
           autoApproveLimit: -1,
           hardLimit: 500,
@@ -395,7 +412,7 @@ describe("JSON API Routes", () => {
 
       const req = new Request("http://localhost:3000/api/rules", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { ...ownerHeaders, "Content-Type": "application/json" },
         body: JSON.stringify(validRules),
       });
 
@@ -411,12 +428,18 @@ describe("JSON API Routes", () => {
   describe("POST /api/demo/reset", () => {
     it("returns 404 when DEMO_MODE !== 'true'", async () => {
       delete process.env.DEMO_MODE;
-      const res = await resetPost();
+      const res = await resetPost(new Request("http://localhost:3000/api/demo/reset", {
+        method: "POST",
+        headers: ownerHeaders,
+      }));
       expect(res.status).toBe(404);
       expect(await res.json()).toEqual({ error: "Not found" });
 
       process.env.DEMO_MODE = "false";
-      const res2 = await resetPost();
+      const res2 = await resetPost(new Request("http://localhost:3000/api/demo/reset", {
+        method: "POST",
+        headers: ownerHeaders,
+      }));
       expect(res2.status).toBe(404);
       expect(await res2.json()).toEqual({ error: "Not found" });
     });
@@ -444,7 +467,10 @@ describe("JSON API Routes", () => {
         blockedActionTypes: [],
       });
 
-      const res = await resetPost();
+      const res = await resetPost(new Request("http://localhost:3000/api/demo/reset", {
+        method: "POST",
+        headers: ownerHeaders,
+      }));
       expect(res.status).toBe(200);
       const json = await res.json();
       expect(json).toHaveProperty("message");

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useOwner } from "./OwnerAuthContext";
 
 interface ResetButtonProps {
   demoMode: boolean;
@@ -6,6 +7,7 @@ interface ResetButtonProps {
 }
 
 export const ResetButton: React.FC<ResetButtonProps> = ({ demoMode, onResetComplete }) => {
+  const { isOwner } = useOwner();
   const [isOpen, setIsOpen] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
@@ -49,12 +51,13 @@ export const ResetButton: React.FC<ResetButtonProps> = ({ demoMode, onResetCompl
         <button
           type="button"
           onClick={() => {
+            if (!isOwner) return;
             setResetError(null);
             setIsOpen(true);
           }}
-          disabled={isResetting}
-          className="text-[13px] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-btn underline underline-offset-4 decoration-[var(--color-line-strong)] hover:decoration-[var(--color-ink)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[var(--color-ink)] focus:ring-offset-2 rounded-[var(--radius-control)] py-1 px-1.5 min-h-[40px] inline-flex items-center"
-          title="Reset all demo actions and restore default rules"
+          disabled={!isOwner || isResetting}
+          className="text-[13px] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-btn underline underline-offset-4 decoration-[var(--color-line-strong)] hover:decoration-[var(--color-ink)] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[var(--color-ink)] focus:ring-offset-2 rounded-[var(--radius-control)] py-1 px-1.5 min-h-[40px] inline-flex items-center"
+          title={isOwner ? "Reset all demo actions and restore default rules" : "Unlock owner mode"}
         >
           Reset demo
         </button>

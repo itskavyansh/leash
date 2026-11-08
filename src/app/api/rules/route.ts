@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getRules, saveRules } from "@/lib/db";
 import type { ActionType } from "@/lib/types";
+import { checkOwnerAuth } from "@/lib/ownerAuth";
 
 const validActionTypes: [ActionType, ...ActionType[]] = [
   "send_invoice",
@@ -35,6 +36,20 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function PUT(request: Request): Promise<NextResponse> {
+  const auth = checkOwnerAuth(request);
+  if (auth.status === "unconfigured") {
+    return NextResponse.json(
+      { error: "Owner authentication is not configured on this server." },
+      { status: 503 }
+    );
+  }
+  if (!auth.isOwner) {
+    return NextResponse.json(
+      { error: "Unauthorized. Owner mode required to update rules." },
+      { status: 401 }
+    );
+  }
+
   let body: unknown;
   try {
     body = await request.json();

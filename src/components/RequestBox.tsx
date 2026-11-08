@@ -54,6 +54,7 @@ export const RequestBox: React.FC<RequestBoxProps> = ({
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
 
   // Document tab state
+  const [docRetryable, setDocRetryable] = useState(false);
   const [docText, setDocText] = useState("");
   const [docFile, setDocFile] = useState<File | null>(null);
   const [isDocLoading, setIsDocLoading] = useState(false);
@@ -140,6 +141,7 @@ export const RequestBox: React.FC<RequestBoxProps> = ({
     setIsDocLoading(true);
     setDocRateLimitMessage(null);
     setDocErrorMessage(null);
+    setDocRetryable(false);
     setDocResponse(null);
 
     try {
@@ -175,6 +177,9 @@ export const RequestBox: React.FC<RequestBoxProps> = ({
       const data: DocumentResponsePayload = await res.json();
 
       if (!res.ok) {
+        if (res.status === 503 || (data as unknown as { retryable?: boolean }).retryable) {
+          setDocRetryable(true);
+        }
         setDocErrorMessage(data.error || "Failed to process document");
         if (onResult) {
           onResult(null);
@@ -317,6 +322,28 @@ export const RequestBox: React.FC<RequestBoxProps> = ({
     } else if (parse.kind === "unsupported") {
       neutralMessage = parse.message;
     } else if (parse.kind === "error") {
+      if (parse.retryable) {
+        return (
+          <div
+            role="status"
+            aria-live="polite"
+            className="fade-in-verdict mt-3 pt-3 border-t border-[var(--color-line-soft)] flex items-center justify-between gap-3 text-sm"
+          >
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[var(--color-wait-solid)] shrink-0" />
+              <span className="text-[var(--color-ink)] font-normal">The AI is busy, retrying</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleTypeSubmit()}
+              disabled={isLoading}
+              className="h-7 px-2.5 rounded-[var(--radius-control)] bg-[var(--color-page)] border border-[var(--color-line)] hover:bg-white text-xs font-medium text-[var(--color-ink)] transition-colors cursor-pointer disabled:opacity-50"
+            >
+              Retry
+            </button>
+          </div>
+        );
+      }
       neutralMessage = parse.message || lastResult.error || "An unexpected error occurred.";
     }
 
@@ -350,6 +377,28 @@ export const RequestBox: React.FC<RequestBoxProps> = ({
     }
 
     if (docErrorMessage) {
+      if (docRetryable) {
+        return (
+          <div
+            role="status"
+            aria-live="polite"
+            className="fade-in-verdict mt-4 pt-3 border-t border-[var(--color-line-soft)] flex items-center justify-between gap-3 text-sm"
+          >
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[var(--color-wait-solid)] shrink-0" />
+              <span className="text-[var(--color-ink)] font-normal">The AI is busy, retrying</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleDocumentSubmit()}
+              disabled={isDocLoading}
+              className="h-7 px-2.5 rounded-[var(--radius-control)] bg-[var(--color-page)] border border-[var(--color-line)] hover:bg-white text-xs font-medium text-[var(--color-ink)] transition-colors cursor-pointer disabled:opacity-50"
+            >
+              Retry
+            </button>
+          </div>
+        );
+      }
       return (
         <div
           role="alert"

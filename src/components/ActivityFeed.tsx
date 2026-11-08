@@ -21,6 +21,7 @@ import {
 import { compareDatesInLocalTimezone } from "@/lib/dateComparator";
 import { buildBriefFacts, buildTemplateBrief } from "@/lib/briefFacts";
 import { getRuleLabel } from "@/lib/ruleLabels";
+import { useOwner } from "./OwnerAuthContext";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -117,6 +118,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
   spentToday = 0,
   dailyCap = 1000,
 }) => {
+  const { isOwner } = useOwner();
   const [quickFilterText, setQuickFilterText] = useState("");
   const [selectedAction, setSelectedAction] = useState<StoredAction | null>(null);
   const [loadingIds, setLoadingIds] = useState<Record<string, "approve" | "reject" | null>>({});
@@ -542,7 +544,12 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
           if (!params.data || params.data.isPinnedTotal) return null;
           return (
             <div className="flex items-center h-full">
-              <StatusBadge status={params.data.status} paypalStatus={params.data.paypalStatus} />
+              <StatusBadge
+                status={params.data.status}
+                paypalStatus={params.data.paypalStatus}
+                actionType={params.data.type}
+                recipient={params.data.recipient}
+              />
             </div>
           );
         },
@@ -865,7 +872,8 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
                     <button
                       type="button"
                       onClick={() => handleReject(action.id)}
-                      disabled={Boolean(currentLoading)}
+                      disabled={!isOwner || Boolean(currentLoading)}
+                      title={isOwner ? undefined : "Unlock owner mode"}
                       className="h-9 px-3 rounded-[var(--radius-control)] bg-white border border-[var(--color-line)] hover:bg-[var(--color-page)] text-xs font-medium text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-btn cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)]"
                     >
                       {currentLoading === "reject" ? "Rejecting..." : "Reject"}
@@ -875,7 +883,8 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
                       <button
                         type="button"
                         onClick={() => handleApprove(action.id)}
-                        disabled={Boolean(currentLoading)}
+                        disabled={!isOwner || Boolean(currentLoading)}
+                        title={isOwner ? undefined : "Unlock owner mode"}
                         className="h-9 px-4 rounded-[var(--radius-control)] bg-[var(--color-brand)] hover:bg-[var(--color-brand-hover)] text-white text-xs font-medium transition-btn disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)] focus:ring-offset-1 inline-flex items-center justify-center min-w-[72px]"
                       >
                         {currentLoading === "approve" ? "Approving..." : "Approve"}
@@ -964,6 +973,8 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({
                 <StatusBadge
                   status={selectedAction.status}
                   paypalStatus={selectedAction.paypalStatus}
+                  actionType={selectedAction.type}
+                  recipient={selectedAction.recipient}
                 />
               </div>
 

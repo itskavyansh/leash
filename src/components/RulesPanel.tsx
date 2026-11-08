@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import type { Rules, ActionType } from "@/lib/types";
+import { useOwner } from "./OwnerAuthContext";
 
 interface RulesPanelProps {
   rules: Rules | null;
@@ -13,6 +14,7 @@ const ACTION_TYPE_OPTIONS: { type: ActionType; label: string }[] = [
 ];
 
 export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) => {
+  const { isOwner } = useOwner();
   const [autoApproveLimit, setAutoApproveLimit] = useState<number>(rules?.autoApproveLimit ?? 200);
   const [hardLimit, setHardLimit] = useState<number>(rules?.hardLimit ?? 5000);
   const [dailyCap, setDailyCap] = useState<number>(rules?.dailyCap ?? 1000);
@@ -287,7 +289,8 @@ export const RulesPanel: React.FC<RulesPanelProps> = ({ rules, onRulesSaved }) =
         <div className="pt-3 border-t border-[var(--color-line-soft)] flex justify-end">
           <button
             type="submit"
-            disabled={isSaving}
+            disabled={!isOwner || isSaving}
+            title={isOwner ? undefined : "Unlock owner mode"}
             className="h-10 px-5 rounded-[var(--radius-control)] bg-[var(--color-brand)] hover:bg-[var(--color-brand-hover)] text-white text-sm font-medium transition-btn disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--color-brand)] min-w-[110px]"
           >
             {isSaving ? "Saving..." : "Save rules"}
