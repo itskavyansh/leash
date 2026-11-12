@@ -11,8 +11,8 @@ Giving an AI agent direct access to your company bank account or payment gateway
 
 ## Live Demo & Video Walkthrough
 
-- **Live Demo**: [TODO]
-- **Video Walkthrough**: [TODO]
+- [**Live Demo**](https://leash-13f9.onrender.com/)
+- [**Video Walkthrough**](https://youtu.be/yqSl96qvPzw)
 
 ---
 
